@@ -1,0 +1,7 @@
+json
+opencv-python
+cmapy
+numpy
+Pillow
+tqdm
+joblib
