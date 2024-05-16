@@ -7,11 +7,7 @@ setup(
     author='Sanghyun Jo (shjo-april)',
     author_email='shjo.april@gmail.com',
     url='https://github.com/shjo-april/sanghyunjo',
-    install_requires=[
-        'json', 
-        'opencv-python', 'cmapy', 'numpy', 'Pillow',
-        'tqdm', 'joblib'
-    ],
+    install_requires=[],
     packages=find_packages(exclude=[]),
     keywords=['sanghyun', 'sanghyunjo', 'shjo', 'ai', 'utils', 'wrapper'],
     python_requires='>=3.8',
