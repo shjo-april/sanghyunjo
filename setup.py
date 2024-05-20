@@ -1,8 +1,10 @@
 from setuptools import setup, find_packages
 
+import sanghyunjo as shj
+
 setup(
     name='sanghyunjo',
-    version='1.0.1',
+    version=shj.__version__,
     description='Wrapped utility functions for existing AI packages to simplify their usage',
     author='Sanghyun Jo (shjo-april)',
     author_email='shjo.april@gmail.com',

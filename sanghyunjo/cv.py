@@ -39,7 +39,7 @@ class MouseEventHandler:
             if flags > 0: self.wheelup()
             else: self.wheeldown()
 
-def imread(path, mode='opencv', unicode=False, mask=False):
+def read_image(path, mode='opencv', unicode=False, mask=False):
     if mode == 'opencv': 
         if unicode: 
             return cv2.imdecode(
@@ -55,29 +55,17 @@ def imread(path, mode='opencv', unicode=False, mask=False):
         except FileNotFoundError: 
             return None
 
-def imwrite(path, image, palette=None):
+def write_image(path, image, palette=None):
     if palette is None: cv2.imwrite(path, image)
     else:
         image = Image.fromarray(image.astype(np.uint8)).convert('P')
         image.putpalette(palette)
         image.save(path)
 
-def imshow(winname, image, wait=-1, title=''):
-    cv2.imshow(winname, image)
-
-    if len(title) > 0:
-        cv2.setWindowTitle(winname, title)
-
-    key = None
-    if wait >= 0:
-        key = cv2.waitKey(wait)
-
-    return key
-
-def viread(path):
+def read_video(path):
     return VideoReader(path)
 
-def viwrite(path, frames, fps):
+def write_video(path, frames, fps):
     h, w = frames[0].shape[:2]
     
     writer = VideoWriter(path, w, h, fps)
@@ -187,11 +175,23 @@ def draw_point(image, point, size, color, edge_color=(0, 0, 0)):
     )
     image[:, :, :] = np.asarray(pillow_image)
 
-def showHeatmaps(heatmaps, tags=None, image=None, option='SEISMIC', norm=False):
+def show_image(winname, image, wait=-1, title=''):
+    cv2.imshow(winname, image)
+
+    if len(title) > 0:
+        cv2.setWindowTitle(winname, title)
+
+    key = None
+    if wait >= 0:
+        key = cv2.waitKey(wait)
+
+    return key
+
+def visualize_heatmaps(heatmaps, tags=None, image=None, option='SEISMIC', norm=False):
     vis_heatmaps = []
 
     if image is not None:
-        drawText(image, 'Input', (0, 0))
+        draw_text(image, 'Input', (0, 0))
         vis_heatmaps.append(image)
 
     if tags is None:
@@ -203,8 +203,8 @@ def showHeatmaps(heatmaps, tags=None, image=None, option='SEISMIC', norm=False):
             max_v = heatmap.max()
             heatmap = (heatmap - min_v) / (max_v - min_v + 1e-5)
         
-        heatmap = applyColor(heatmap, option)
-        if tag is not None: drawText(heatmap, tag, (0, 0), font_size=40)
+        heatmap = colorize(heatmap, option)
+        if tag is not None: draw_text(heatmap, tag, (0, 0), font_size=40)
         vis_heatmaps.append(heatmap)
 
     return np.concatenate(vis_heatmaps, axis=1)
