@@ -175,6 +175,9 @@ def draw_point(image, point, size, color, edge_color=(0, 0, 0)):
     )
     image[:, :, :] = np.asarray(pillow_image)
 
+def draw_rect(image, xyxy, color=(79, 244, 255), thickness=1):
+    cv2.rectangle(image, tuple(xyxy[:2]), tuple(xyxy[2:]), color, thickness)
+
 def show_image(winname, image, wait=-1, title=''):
     cv2.imshow(winname, image)
 
@@ -281,3 +284,15 @@ class VideoWriter:
     def close(self):
         self.writer.release()
         self.writer = None
+
+def vstack(*images):
+    return np.concatenate(images, axis=0)
+
+def hstack(*images):
+    return np.concatenate(images, axis=1)
+
+def gray2bgr(image):
+    return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+def overlay(image1, image2, alpha):
+    return cv2.addWeighted(image1, alpha, image2, 1. - alpha, 0.0)

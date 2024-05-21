@@ -56,11 +56,17 @@ class Timer:
         self.start = time.time()
         return self
     
-    def get(self):
+    def get(self, duration='milliseconds'):
         end = time.time()
         interval = end - self.start
-
-        # print(interval, self.start, end)
+        
+        if duration is not None:
+            if duration == 'seconds':
+                interval = f'{int(interval)}s'
+            elif duration == 'milliseconds':
+                interval = f'{int(interval*1000)}ms'
+            else:
+                pass
         
         self.start = end
         return interval
