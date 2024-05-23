@@ -8,6 +8,8 @@ import numpy as np
 
 from PIL import ImageFont, ImageDraw, Image
 
+Image.MAX_IMAGE_PIXELS = None # to read unlimited pixels like a large tiff format
+
 ESC = 27
 SPACE = 32
 PLUS = ord('+')
