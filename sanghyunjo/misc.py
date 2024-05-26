@@ -48,6 +48,9 @@ def parallel(fn, data_list, n_jobs=cpus(), show=False):
 
     return Parallel(n_jobs, **print_dict)([delayed(fn)(*data) for data in data_list])
 
+def strfmt(fmt: str='5s', v: str='True'):
+    return ('%'+fmt)%v
+
 class Timer:
     def __init__(self):
         self.start = time.time()
