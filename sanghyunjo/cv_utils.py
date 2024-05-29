@@ -41,7 +41,7 @@ class MouseEventHandler:
             if flags > 0: self.wheelup()
             else: self.wheeldown()
 
-def read_image(path, mode='opencv', color=None):
+def read_image(path, color=None, mode='opencv'):
     color_dict = {
         'opencv': {
             'gray': cv2.IMREAD_GRAYSCALE,
@@ -57,9 +57,9 @@ def read_image(path, mode='opencv', color=None):
 
     try: 
         if mode == 'opencv':
-            image = cv2.imdecode(np.fromfile(path, np.uint8), color_dict[color])
+            image = cv2.imdecode(np.fromfile(path, np.uint8), color_dict[mode][color])
         else:
-            image = Image.open(path).convert(color_dict[color])
+            image = Image.open(path).convert(color_dic[mode][color])
     except FileNotFoundError: 
         image = None
     

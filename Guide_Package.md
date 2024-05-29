@@ -3,18 +3,14 @@
 python -m pip install setuptools wheel --upgrade
 ```
 
-- Build a package (a wheel file)
+- Build and install a package (a wheel file)
 ```bash
 python setup.py sdist bdist_wheel
-```
-
-- Install a package
-```bash
-pip install dist/sanghyunjo-1.4.3-py3-none-any.whl --force-reinstall
+pip install dist/sanghyunjo-1.4.4-py3-none-any.whl --force-reinstall
 ```
 
 - Release a package in PYPI
 ```bash
 pip install twine
-python -m twine upload dist/sanghyunjo-1.4.3*
+python -m twine upload dist/sanghyunjo-1.4.4*
 ```
