@@ -41,21 +41,29 @@ class MouseEventHandler:
             if flags > 0: self.wheelup()
             else: self.wheeldown()
 
-def read_image(path, mode='opencv', unicode=False, mask=False):
-    if mode == 'opencv': 
-        if unicode: 
-            return cv2.imdecode(
-                np.fromfile(path, dtype=np.uint8), 
-                cv2.IMREAD_UNCHANGED
-            )
-        else: 
-            return cv2.imread(path)
-    else: 
-        try: 
-            image = Image.open(path)
-            return image if mask else image.convert('RGB')
-        except FileNotFoundError: 
-            return None
+def read_image(path, mode='opencv', color=None):
+    color_dict = {
+        'opencv': {
+            'gray': cv2.IMREAD_GRAYSCALE,
+            'rgb': cv2.IMREAD_COLOR,
+            None: cv2.IMREAD_UNCHANGED,
+        },
+        'pillow': {
+            'gray': 'L',
+            'rgb': 'RGB',
+            None: None
+        }
+    }
+
+    try: 
+        if mode == 'opencv':
+            image = cv2.imdecode(np.fromfile(path, np.uint8), color_dict[color])
+        else:
+            image = Image.open(path).convert(color_dict[color])
+    except FileNotFoundError: 
+        image = None
+    
+    return image
 
 def write_image(path, image, palette=None):
     if palette is None: cv2.imwrite(path, image)
