@@ -59,7 +59,7 @@ def read_image(path, color=None, mode='opencv'):
         if mode == 'opencv':
             image = cv2.imdecode(np.fromfile(path, np.uint8), color_dict[mode][color])
         else:
-            image = Image.open(path).convert(color_dic[mode][color])
+            image = Image.open(path).convert(color_dict[mode][color])
     except FileNotFoundError: 
         image = None
     
@@ -301,8 +301,16 @@ def vstack(*images):
 def hstack(*images):
     return np.concatenate(images, axis=1)
 
-def gray2bgr(image):
-    return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+def convert(image, code='gray2bgr'):
+    if code == 'gray2bgr':
+        code = cv2.COLOR_GRAY2BGR
+    elif code == 'bgr2gray':
+        code = cv2.COLOR_BGR2GRAY
+    elif code == 'bgr2rgb':
+        code = cv2.COLOR_BGR2RGB
+    elif code == 'rgb2bgr':
+        code = cv2.COLOR_RGB2BGR
+    return cv2.cvtColor(image, code)
 
 def overlay(image1, image2, alpha):
     return cv2.addWeighted(image1, alpha, image2, 1. - alpha, 0.0)

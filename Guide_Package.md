@@ -6,7 +6,7 @@ python -m pip install setuptools wheel --upgrade
 - Build and install a package (a wheel file)
 ```bash
 python setup.py sdist bdist_wheel
-pip install dist/sanghyunjo-1.4.4-py3-none-any.whl --force-reinstall
+pip install dist/sanghyunjo-1.4.5-py3-none-any.whl --force-reinstall
 ```
 
 - Release a package in PYPI
