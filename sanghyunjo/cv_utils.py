@@ -223,6 +223,9 @@ def visualize_heatmaps(heatmaps, tags=None, image=None, option='SEISMIC', norm=F
     return np.concatenate(vis_heatmaps, axis=1)
 
 def resize(image, size=None, scale=None, mode='bicubic'):
+    if not isinstance(size, tuple):
+        size = get_size(size)
+    
     inp_dict = {
         'bicubic': cv2.INTER_CUBIC,
         'nearest': cv2.INTER_NEAREST,
@@ -312,5 +315,18 @@ def convert(image, code='gray2bgr'):
         code = cv2.COLOR_RGB2BGR
     return cv2.cvtColor(image, code)
 
+def cv2pil(image: np.ndarray) -> Image:
+    return Image.fromarray(convert(image, 'bgr2rgb'))
+
+def pil2cv(image: Image) -> np.ndarray:
+    return convert(np.asarray(image), 'rgb2bgr')
+
 def overlay(image1, image2, alpha):
     return cv2.addWeighted(image1, alpha, image2, 1. - alpha, 0.0)
+
+def get_size(image) -> tuple:
+    if isinstance(image, np.ndarray): # cv
+        size = tuple(image.shape[:2][::-1])
+    else: # pillow
+        size = image.size
+    return size
