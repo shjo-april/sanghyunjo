@@ -330,3 +330,13 @@ def get_size(image) -> tuple:
     else: # pillow
         size = image.size
     return size
+
+def write_gif(path, images, duration=1000): # 1s per image
+    gif_images = []
+    for image in images:
+        gif_images.append(Image.fromarray(convert(image, 'bgr2rgb')))
+    
+    gif_images[0].save(
+        path, append_images=gif_images[1:],
+        save_all=True, loop=0xff, duration=duration
+    )
