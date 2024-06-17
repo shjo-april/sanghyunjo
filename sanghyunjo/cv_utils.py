@@ -117,6 +117,7 @@ def colorize(cam, option='SEISMIC'):
         'HOT': cv2.COLORMAP_HOT,
         'SUMMER': cv2.COLORMAP_SUMMER,
         'WINTER': cv2.COLORMAP_WINTER,
+        'INFERNO': cv2.COLORMAP_INFERNO,
         'GRAY': cmapy.cmap('gray'),
         'SEISMIC': cmapy.cmap('seismic'),
     }
