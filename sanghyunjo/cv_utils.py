@@ -134,7 +134,6 @@ def colorize(cam, option='SEISMIC'):
     return cam
 
 def get_default_font_path():
-    # Get the absolute path to the font file included in the package
     return os.path.join(os.path.dirname(__file__), 'fonts', 'Times New Roman MT Std.otf')
 
 def draw_text(
