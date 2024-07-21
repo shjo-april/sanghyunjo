@@ -28,6 +28,12 @@ def makedir(path):
     os.makedirs(path, exist_ok=True)
     return path
 
+def get_name(path) -> str:
+    return os.path.basename(path)
+
+def get_ext(path):
+    return get_name(path).split('.')[-1]
+
 def listdir(dir_path):
     if '*' in dir_path: return glob.glob(dir_path)
     else: return os.listdir(dir_path)
