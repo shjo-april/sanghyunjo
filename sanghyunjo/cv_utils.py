@@ -59,7 +59,8 @@ def read_image(path, color=None, mode='opencv'):
         if mode == 'opencv':
             image = cv2.imdecode(np.fromfile(path, np.uint8), color_dict[mode][color])
         else:
-            image = Image.open(path).convert(color_dict[mode][color])
+            image = Image.open(path)
+            image = image if color_dict[mode][color] is None else image.convert(color_dict[mode][color])
     except FileNotFoundError: 
         image = None
     
@@ -87,7 +88,7 @@ def set_mouse(winname, func):
     cv2.namedWindow(winname)
     cv2.setMouseCallback(winname, func)
 
-def interpolate_two_colors(c1, c2, n=256):
+def interpolate_colors(c1, c2, n=256):
     c1 = np.asarray(c1, dtype=np.float32) / 255.
     c2 = np.asarray(c2, dtype=np.float32) / 255.
 
@@ -398,6 +399,7 @@ def colorize(cam, option='SEISMIC'):
         'INFERNO': cv2.COLORMAP_INFERNO,
         'GRAY': cmapy.cmap('gray'),
         'SEISMIC': cmapy.cmap('seismic'),
+        'VIRIDIS': cmapy.cmap('viridis'),
     }
     
     if cam.dtype in [np.float32, np.float64]:

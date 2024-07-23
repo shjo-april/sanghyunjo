@@ -34,6 +34,9 @@ def get_name(path) -> str:
 def get_ext(path):
     return get_name(path).split('.')[-1]
 
+def isfile(path): # file or dir
+    return os.path.isfile(path) or os.path.isdir(path)
+
 def listdir(dir_path):
     if '*' in dir_path: return glob.glob(dir_path)
     else: return os.listdir(dir_path)
