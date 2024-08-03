@@ -28,11 +28,13 @@ def makedir(path):
     os.makedirs(path, exist_ok=True)
     return path
 
-def get_name(path) -> str:
-    return os.path.basename(path)
-
-def get_ext(path):
-    return get_name(path).split('.')[-1]
+def get_name(path, ext=False) -> str:
+    filename = os.path.basename(path)
+    if not ext: 
+        return filename
+    else:
+        extension = filename.split('.')[-1]
+        return filename, extension
 
 def isfile(path): # file or dir
     return os.path.isfile(path) or os.path.isdir(path)
