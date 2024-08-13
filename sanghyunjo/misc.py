@@ -109,7 +109,7 @@ class Parser:
             self.add_from_inputs(input_dict)
     
     def add(self, tag, default):
-        if isinstance(default, bool): option = {'action': 'store_true'}
+        if isinstance(default, bool): option = {"action": "store_false"} if default else {'action': 'store_true'}
         elif isinstance(default, list): option = {'nargs': '+', 'type': type(default[0])}
         else: option = {'default': default, 'type': type(default)}
         self.parser.add_argument(f'--{tag}', **option)
