@@ -461,7 +461,7 @@ def draw_point(image, point, size, color, edge_color=(0, 0, 0)):
     drw = ImageDraw.Draw(pillow_image)
     drw.ellipse(
         [(x-size, y-size), (x+size, y+size)], 
-        (b, g, r, 0), (eb, eg, er, 0), edge_size
+        (r, g, b, 0), (er, eg, eb, 0), edge_size
     )
     image[:, :, :] = np.asarray(pillow_image)
 
@@ -579,10 +579,10 @@ class VideoWriter:
         self.writer = None
 
 def vstack(*images):
-    return np.concatenate(images, axis=0)
+    return np.concatenate([image if len(image.shape) == 3 else convert(image) for image in images], axis=0)
 
 def hstack(*images):
-    return np.concatenate(images, axis=1)
+    return np.concatenate([image if len(image.shape) == 3 else convert(image) for image in images], axis=1)
 
 def convert(image, code='gray2bgr'):
     if code == 'gray2bgr':
