@@ -433,7 +433,10 @@ def draw_text(
     text = ' ' + text
     font = ImageFont.truetype(font_path, font_size)
     
-    tw, th = font.getsize(text)
+    # tw, th = font.getsize(text) # for pillow==9.5.0
+    left, top, right, bottom = font.getbbox(text)
+    tw, th = right - left, bottom - top
+
     if centering:
         coordinate = list(coordinate)
         coordinate[0] = max(coordinate[0] - (tw // 2 + padding // 2), 0)
