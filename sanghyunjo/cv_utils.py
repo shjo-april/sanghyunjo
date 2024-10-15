@@ -52,6 +52,9 @@ def read_image(path, color=None, mode='opencv'):
             'gray': 'L',
             'rgb': 'RGB',
             None: None
+        },
+        'mask': {
+            
         }
     }
 
@@ -60,7 +63,10 @@ def read_image(path, color=None, mode='opencv'):
             image = cv2.imdecode(np.fromfile(path, np.uint8), color_dict[mode][color])
         else:
             image = Image.open(path)
-            image = image if color_dict[mode][color] is None else image.convert(color_dict[mode][color])
+            if mode == 'pillow':
+                image = image if color_dict[mode][color] is None else image.convert(color_dict[mode][color])
+            else:
+                image = np.asarray(image)
     except FileNotFoundError: 
         image = None
     
@@ -461,7 +467,7 @@ def draw_point(image, point, size, color, edge_color=(0, 0, 0)):
     drw = ImageDraw.Draw(pillow_image)
     drw.ellipse(
         [(x-size, y-size), (x+size, y+size)], 
-        (r, g, b, 0), (er, eg, eb, 0), edge_size
+        (b, g, r, 0), (eb, eg, er, 0), edge_size
     )
     image[:, :, :] = np.asarray(pillow_image)
 
