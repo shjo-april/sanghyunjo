@@ -110,7 +110,7 @@ class Parser:
     
     def add(self, tag, default):
         if isinstance(default, bool): option = {"action": "store_false"} if default else {'action': 'store_true'}
-        elif isinstance(default, list): option = {'nargs': '+', 'type': type(default[0])}
+        elif isinstance(default, list): option = {'nargs': '+', 'default': default, 'type': type(default[0])}
         else: option = {'default': default, 'type': type(default)}
         self.parser.add_argument(f'--{tag}', **option)
 

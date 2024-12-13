@@ -549,8 +549,8 @@ class VideoReader:
         self.height = int(self.video.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = int(self.video.get(cv2.CAP_PROP_FPS))
 
-    def __len__(self):
-        return int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+    def __len__(self, cast_fn=int):
+        return cast_fn(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
         
     def __getitem__(self, index=None):
         if index is not None:
