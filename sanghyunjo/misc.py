@@ -36,9 +36,9 @@ def get_name(path, ext=False) -> str:
         extension = filename.split('.')[-1]
         return filename, extension
 
-def replace_ext(path: str, extension: str) -> str:
+def replace_ext(path: str='image.jpg', extension: str='png') -> str:
     prev_extension = path.split('.')[-1]
-    return path.replace('.'+prev_extension, extension)
+    return path.replace('.'+prev_extension, '.'+extension)
 
 def isfile(path): # file or dir
     return os.path.isfile(path) or os.path.isdir(path)
