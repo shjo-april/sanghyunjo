@@ -4,8 +4,10 @@
 import os
 import cv2
 import cmapy
+import requests
 import numpy as np
 
+from io import BytesIO
 from PIL import ImageFont, ImageDraw, Image
 
 Image.MAX_IMAGE_PIXELS = None # to read unlimited pixels like a large tiff format
@@ -629,3 +631,22 @@ def write_gif(path, images, duration=1000): # 1s per image
         path, append_images=gif_images[1:],
         save_all=True, loop=0xff, duration=duration
     )
+
+def download_image_from_url(image_url: str) -> Image.Image:
+    try:
+        result = requests.get(image_url)
+        result.raise_for_status()
+        if 'image' not in result.headers['content-type']: 
+            raise ValueError("ContentIsNotImage")
+        image = Image.open(BytesIO(result.content))
+    except requests.ConnectionError as identifier:
+        raise requests.ConnectionError("ConnectionError")
+    except requests.HTTPError as identifier:
+        raise requests.HTTPError("HTTPError")
+    except requests.ConnectTimeout as identifier:
+        raise requests.ConnectTimeout("ConnectTimeout")
+    except requests.TooManyRedirects as identifier:
+        raise requests.TooManyRedirects("TooManyRedirects")
+    except ValueError as identifier:
+        raise ValueError("ContentIsNotImage")
+    return image
