@@ -1,50 +1,139 @@
-# Copyright (C) 2024 * Ltd. All rights reserved.
+# Copyright (C) 2025 * Ltd. All rights reserved.
 # author: Sanghyun Jo <shjo.april@gmail.com>
 
 import os
 import cv2
 import cmapy
 import requests
+import warnings
+import functools
 import numpy as np
 
 from io import BytesIO
+from dataclasses import dataclass
 from PIL import ImageFont, ImageDraw, Image
 
 Image.MAX_IMAGE_PIXELS = None # to read unlimited pixels like a large tiff format
 
-ESC = 27
-SPACE = 32
-PLUS = ord('+')
-MINUS = ord('-')
+def deprecated(alternative_name):
+    """ 
+    A decorator to mark functions as deprecated and suggest an alternative function.
+    
+    Args:
+        alternative_name (str): The recommended alternative function name.
+    
+    Returns:
+        Wrapper function that issues a warning.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"'{func.__name__}' is deprecated and will be removed in the future. "
+                f"Use '{alternative_name}' instead.",
+                category=DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+@dataclass(frozen=True)
+class KeyCode:
+    ESC: int = 27
+    SPACE: int = 32
+    PLUS: int = ord('+')
+    MINUS: int = ord('-')
+
+@dataclass(frozen=True)
+class MouseEvent:
+    NONE: int = 0
+    MOVE: int = 1
+    LEFT_DOWN: int = 2
+    LEFT_UP: int = 3
+    RIGHT_DOWN: int = 4
+    RIGHT_UP: int = 5
+    WHEEL_UP: int = 6
+    WHEEL_DOWN: int = 7
+    LEFT_MOVE: int = 8  # 추가
+    RIGHT_MOVE: int = 9  # 추가
+
+@dataclass
+class MouseState:
+    x: int = 0
+    y: int = 0
+    event: int = MouseEvent.NONE
 
 class MouseEventHandler:
-    def __init__(self): self.clear()
+    def __init__(self, winname):
+        self.state = MouseState()
+        self.button = None  # 'left' or 'right'
 
-    def get(self): 
-        event = self.event; self.event = None
-        return self.x, self.y, event
-    
-    def clear(self): self.x, self.y, self.event, self.down = 0, 0, None, None
-    def move(self, x, y): self.x, self.y, self.event = x, y, ('' if self.down is None else self.down)+'move'
-    def leftdown(self, x, y): self.x, self.y, self.event, self.down = x, y, 'leftdown', 'left'
-    def leftup(self, x, y): self.x, self.y, self.event, self.down = x, y, 'leftup', None
-    def rightdown(self, x, y): self.x, self.y, self.event, self.down = x, y, 'rightdown', 'right'
-    def rightup(self, x, y): self.x, self.y, self.event, self.down = x, y, 'rightup', None
-    def wheelup(self): self.event = 'wheelup'
-    def wheeldown(self): self.event = 'wheeldown'
-    
+        cv2.namedWindow(winname)
+        cv2.setMouseCallback(winname, self)
+
+    def get(self):
+        state, self.state = self.state, MouseState()
+        return state
+
+    def move(self, x, y):
+        self.state.x, self.state.y = x, y
+        if self.button == 'left':
+            self.state.event = MouseEvent.LEFT_MOVE
+        elif self.button == 'right':
+            self.state.event = MouseEvent.RIGHT_MOVE
+        else:
+            self.state.event = MouseEvent.MOVE
+
+    def leftdown(self, x, y):
+        self.state = MouseState(x, y, MouseEvent.LEFT_DOWN)
+        self.button = 'left'
+
+    def leftup(self, x, y):
+        self.state = MouseState(x, y, MouseEvent.LEFT_UP)
+        self.button = None
+
+    def rightdown(self, x, y):
+        self.state = MouseState(x, y, MouseEvent.RIGHT_DOWN)
+        self.button = 'right'
+
+    def rightup(self, x, y):
+        self.state = MouseState(x, y, MouseEvent.RIGHT_UP)
+        self.button = None
+
+    def wheelup(self):
+        self.state.event = MouseEvent.WHEEL_UP
+
+    def wheeldown(self):
+        self.state.event = MouseEvent.WHEEL_DOWN
+
     def __call__(self, event, x, y, flags, params):
-        if event == cv2.EVENT_LBUTTONDOWN: self.leftdown(x, y)
-        elif event == cv2.EVENT_LBUTTONUP: self.leftup(x, y)
-        elif event == cv2.EVENT_RBUTTONDOWN: self.rightdown(x, y)
-        elif event == cv2.EVENT_RBUTTONUP: self.rightup(x, y)
-        elif event == cv2.EVENT_MOUSEMOVE: self.move(x, y)
-        elif event == cv2.EVENT_MOUSEWHEEL: 
-            if flags > 0: self.wheelup()
-            else: self.wheeldown()
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.leftdown(x, y)
+        elif event == cv2.EVENT_LBUTTONUP:
+            self.leftup(x, y)
+        elif event == cv2.EVENT_RBUTTONDOWN:
+            self.rightdown(x, y)
+        elif event == cv2.EVENT_RBUTTONUP:
+            self.rightup(x, y)
+        elif event == cv2.EVENT_MOUSEMOVE:
+            self.move(x, y)
+        elif event == cv2.EVENT_MOUSEWHEEL:
+            self.wheelup() if flags > 0 else self.wheeldown()
 
-def read_image(path, color=None, mode='opencv'):
-    color_dict = {
+def imread(path, color=None, backend='opencv'):
+    """
+    Loads an image using OpenCV or Pillow.
+
+    Args:
+        path (str): Path to the image file.
+        color_mode (str | None): Color mode ('gray', 'rgb', or None for unchanged).
+        backend (str): Library to use ('opencv' or 'pillow').
+
+    Returns:
+        np.array or PIL.Image: Loaded image in the specified format, or None if not found.
+    """
+    color_modes = {
         'opencv': {
             'gray': cv2.IMREAD_GRAYSCALE,
             'rgb': cv2.IMREAD_COLOR,
@@ -54,47 +143,271 @@ def read_image(path, color=None, mode='opencv'):
             'gray': 'L',
             'rgb': 'RGB',
             None: None
-        },
-        'mask': {
-            
         }
     }
 
-    try: 
-        if mode == 'opencv':
-            image = cv2.imdecode(np.fromfile(path, np.uint8), color_dict[mode][color])
+    try:
+        if backend == 'opencv':
+            return cv2.imdecode(np.fromfile(path, np.uint8), color_modes['opencv'].get(color, cv2.IMREAD_UNCHANGED))
         else:
             image = Image.open(path)
-            if mode == 'pillow':
-                image = image if color_dict[mode][color] is None else image.convert(color_dict[mode][color])
-            else:
-                image = np.asarray(image)
-    except FileNotFoundError: 
-        image = None
+            return image if color_modes['pillow'].get(color) is None else image.convert(color_modes['pillow'][color])
+    except FileNotFoundError:
+        return None
+
+def imwrite(path, image, palette=None):
+    """
+    Saves an image using OpenCV or Pillow.
+
+    Args:
+        path (str): File path to save the image.
+        image (np.array or PIL.Image): Image to save.
+        palette (list | None): Optional palette for indexed color images.
+
+    Returns:
+        bool: True if the image is successfully saved, False otherwise.
+    """
+    try:
+        if palette is None:
+            return cv2.imwrite(path, image)
+        else:
+            img = Image.fromarray(image.astype(np.uint8)).convert('P')
+            img.putpalette(palette)
+            img.save(path)
+            return True
+    except Exception:
+        return False
+
+def imshow(winname, image, wait=-1, title=''):
+    """
+    Displays an image in an OpenCV window.
+
+    Args:
+        winname (str): Name of the OpenCV window.
+        image (np.array): Image to display.
+        wait (int): Time in milliseconds to wait for a key press (-1 for infinite).
+        title (str): Optional title for the window.
+
+    Returns:
+        int or None: Key press value if `wait` >= 0, otherwise None.
+    """
+    cv2.imshow(winname, image)
+
+    if title:
+        cv2.setWindowTitle(winname, title)
+
+    return cv2.waitKey(wait) if wait >= 0 else None
     
-    return image
+""" Deprecated aliases with warning """
+@deprecated("imread")
+def read_image(path, color=None, backend='opencv'):
+    return imread(path, color, backend)
 
+@deprecated("imwrite")
 def write_image(path, image, palette=None):
-    if palette is None: cv2.imwrite(path, image)
-    else:
-        image = Image.fromarray(image.astype(np.uint8)).convert('P')
-        image.putpalette(palette)
-        image.save(path)
+    return imwrite(path, image, palette)
 
-def read_video(path):
+@deprecated("imshow")
+def show_image(winname, image, wait=-1, title=''):
+    return imshow(winname, image, wait, title)
+
+class VideoReader:
+    """
+    Simplified video reader for easier frame extraction.
+
+    Example 1: Read frames in a loop
+        video = VideoReader("video.mp4")
+        while True:
+            frame = video()
+            if frame is None:
+                break
+            cv2.imshow("Video", frame)
+            cv2.waitKey(1)
+
+    Example 2: Access frames by index
+        video = VideoReader("video.mp4")
+        for i in range(0, len(video), video.fps):
+            frame = video[i]
+            cv2.imshow("Frame", frame)
+            cv2.waitKey(1)
+    """
+    def __init__(self, path):
+        self.video = cv2.VideoCapture(path)
+        self.width = int(self.video.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.fps = int(self.video.get(cv2.CAP_PROP_FPS))
+
+    def __len__(self, cast_fn=int):
+        return cast_fn(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+    def __getitem__(self, index=None):
+        if index is not None:
+            self.video.set(cv2.CAP_PROP_POS_FRAMES, index)
+        ret, frame = self.video.read()
+        return frame if ret else None
+    
+    def __call__(self):
+        return self.__getitem__()
+    
+    def release(self):
+        """ Releases the video capture object. """
+        self.video.release()
+    
+class VideoWriter:
+    """
+    Simplified video writer for easy frame saving.
+
+    Example:
+        writer = VideoWriter("output.mp4", w, h, fps)
+        for frame in frames:
+            writer(frame)
+        writer.release()
+    """
+    def __init__(self, path, width, height, fps):
+        self.writer = cv2.VideoWriter(
+            path, cv2.VideoWriter_fourcc(*'MP4V'), fps, (width, height)
+        )
+
+    def __call__(self, frame):
+        """ Writes a frame to the video file. """
+        self.writer.write(frame)
+
+    def release(self):
+        """ Releases the video writer object. """
+        self.writer.release()
+
+def viread(path):
+    """ Creates a video reader instance (alias for VideoReader). """
     return VideoReader(path)
 
-def write_video(path, frames, fps):
+def viwrite(path, frames, fps):
+    """ Writes a list of frames to a video file. """
     h, w = frames[0].shape[:2]
-    
     writer = VideoWriter(path, w, h, fps)
     for frame in frames:
         writer(frame)
-    writer.close()
+    writer.release()
 
-def set_mouse(winname, func):
-    cv2.namedWindow(winname)
-    cv2.setMouseCallback(winname, func)
+""" Deprecated aliases with warning """
+@deprecated("viread")
+def read_video(path):
+    return viread(path)
+
+@deprecated("viwrite")
+def write_video(path, frames, fps):
+    return viwrite(path, frames, fps)
+
+# TODO: optimize/add existing/new functions below
+def draw_rect(image, xyxy, color=(79, 244, 255), thickness=1, dashed=False, step=10):
+    """
+    Draws a rectangle on the given image, with an option for a dashed border.
+
+    Args:
+        image (np.array): The image on which the rectangle is drawn.
+        xyxy (tuple): The coordinates of the rectangle (xmin, ymin, xmax, ymax).
+        color (tuple): The color of the rectangle in BGR format (default: light blue).
+        thickness (int): The thickness of the rectangle's border (default: 1).
+        dashed (bool): If True, draws a dashed rectangle instead of a solid one (default: False).
+        step (int): The gap size for the dashed effect (default: 10 pixels).
+
+    Example:
+        # Draw a solid rectangle
+        draw_rect(img, (50, 50, 200, 200), color=(0, 255, 0), thickness=2, dashed=False)
+
+        # Draw a dashed rectangle
+        draw_rect(img, (250, 50, 400, 200), color=(0, 255, 0), thickness=2, dashed=True)
+    """
+    xmin, ymin, xmax, ymax = xyxy
+
+    if not dashed:
+        # Draw a solid rectangle using OpenCV's built-in function
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), color, thickness)
+    else:
+        # Draw a dashed rectangle by creating short line segments
+        # Horizontal lines (top and bottom)
+        for x in range(xmin, xmax, step * 2):
+            cv2.line(image, (x, ymin), (min(x + step, xmax), ymin), color, thickness)
+            cv2.line(image, (x, ymax), (min(x + step, xmax), ymax), color, thickness)
+
+        # Vertical lines (left and right)
+        for y in range(ymin, ymax, step * 2):
+            cv2.line(image, (xmin, y), (xmin, min(y + step, ymax)), color, thickness)
+            cv2.line(image, (xmax, y), (xmax, min(y + step, ymax)), color, thickness)
+
+def colorize(cam, option='SEISMIC'):
+    color_dict = {
+        'JET': cv2.COLORMAP_JET,
+        'HOT': cv2.COLORMAP_HOT,
+        'SUMMER': cv2.COLORMAP_SUMMER,
+        'WINTER': cv2.COLORMAP_WINTER,
+        'INFERNO': cv2.COLORMAP_INFERNO,
+        'GRAY': cmapy.cmap('gray'),
+        'SEISMIC': cmapy.cmap('seismic'),
+        'VIRIDIS': cmapy.cmap('viridis'),
+    }
+    
+    if cam.dtype in [np.float32, np.float64]:
+        cam = (cam * 255).astype(np.uint8)
+    
+    if len(cam.shape) == 3:
+        cam = np.max(cam, axis=0)
+    
+    colors = color_dict[option] if isinstance(option, str) else option
+    cam = cv2.applyColorMap(cam, colors)
+    
+    return cam
+
+def draw_text(
+        image: np.ndarray, text: str, coordinate: tuple, color: tuple=(0, 0, 0), 
+        font_path: str=None, font_size: int=20, 
+        background: tuple=(79, 244, 255), centering: bool=True, padding: int=5
+    ):
+    if font_path is None:
+        font_path = os.path.join(os.path.dirname(__file__), 'fonts', 'Times New Roman MT Std.otf')
+    
+    text = ' ' + text
+    font = ImageFont.truetype(font_path, font_size)
+    
+    # tw, th = font.getsize(text) # for pillow==9.5.0
+    left, top, right, bottom = font.getbbox(text)
+    tw, th = right - left, bottom - top
+
+    if centering:
+        coordinate = list(coordinate)
+        coordinate[0] = max(coordinate[0] - (tw // 2 + padding // 2), 0)
+        coordinate[1] = max(coordinate[1] - (th // 2 + padding // 2), 0)
+        coordinate = tuple(coordinate)
+    
+    background_box = None
+    if background is not None:
+        cv2.rectangle(image, coordinate, (coordinate[0] + tw + padding, coordinate[1] + th + padding), background, cv2.FILLED)
+        
+        xmin, ymin = coordinate
+        xmax, ymax = (coordinate[0] + tw + padding, coordinate[1] + th + padding)
+        
+        background_box = [xmin, ymin, xmax, ymax]
+    
+    pillow_image = Image.fromarray(image)
+    draw = ImageDraw.Draw(pillow_image)
+    draw.text(coordinate, text, font=font, fill=(color[0], color[1], color[2], 0))
+
+    image[:, :, :] = np.asarray(pillow_image)
+    return background_box
+
+def draw_point(image, point, size, color, edge_color=(0, 0, 0)):
+    x, y = point
+    edge_size = max(size // 5, 1)
+
+    b, g, r = color
+    eb, eg, er = edge_color
+
+    pillow_image = Image.fromarray(image)
+    drw = ImageDraw.Draw(pillow_image)
+    drw.ellipse(
+        [(x-size, y-size), (x+size, y+size)], 
+        (b, g, r, 0), (eb, eg, er, 0), edge_size
+    )
+    image[:, :, :] = np.asarray(pillow_image)
 
 def interpolate_colors(c1, c2, n=256):
     c1 = np.asarray(c1, dtype=np.float32) / 255.
@@ -398,99 +711,6 @@ def get_colors(num_classes=20, ignore_index=255, color_format='rgb', data=None):
 
     return colors
 
-def colorize(cam, option='SEISMIC'):
-    color_dict = {
-        'JET': cv2.COLORMAP_JET,
-        'HOT': cv2.COLORMAP_HOT,
-        'SUMMER': cv2.COLORMAP_SUMMER,
-        'WINTER': cv2.COLORMAP_WINTER,
-        'INFERNO': cv2.COLORMAP_INFERNO,
-        'GRAY': cmapy.cmap('gray'),
-        'SEISMIC': cmapy.cmap('seismic'),
-        'VIRIDIS': cmapy.cmap('viridis'),
-    }
-    
-    if cam.dtype in [np.float32, np.float64]:
-        cam = (cam * 255).astype(np.uint8)
-    
-    if len(cam.shape) == 3:
-        cam = np.max(cam, axis=0)
-    
-    colors = color_dict[option] if isinstance(option, str) else option
-    cam = cv2.applyColorMap(cam, colors)
-    
-    return cam
-
-def get_default_font_path():
-    return os.path.join(os.path.dirname(__file__), 'fonts', 'Times New Roman MT Std.otf')
-
-def draw_text(
-        image: np.ndarray, text: str, coordinate: tuple, color: tuple=(0, 0, 0), 
-        font_path: str=None, font_size: int=20, 
-        background: tuple=(79, 244, 255), centering: bool=True, padding: int=5
-    ):
-    if font_path is None:
-        font_path = get_default_font_path()
-    
-    text = ' ' + text
-    font = ImageFont.truetype(font_path, font_size)
-    
-    # tw, th = font.getsize(text) # for pillow==9.5.0
-    left, top, right, bottom = font.getbbox(text)
-    tw, th = right - left, bottom - top
-
-    if centering:
-        coordinate = list(coordinate)
-        coordinate[0] = max(coordinate[0] - (tw // 2 + padding // 2), 0)
-        coordinate[1] = max(coordinate[1] - (th // 2 + padding // 2), 0)
-        coordinate = tuple(coordinate)
-    
-    background_box = None
-    if background is not None:
-        cv2.rectangle(image, coordinate, (coordinate[0] + tw + padding, coordinate[1] + th + padding), background, cv2.FILLED)
-        
-        xmin, ymin = coordinate
-        xmax, ymax = (coordinate[0] + tw + padding, coordinate[1] + th + padding)
-        
-        background_box = [xmin, ymin, xmax, ymax]
-    
-    pillow_image = Image.fromarray(image)
-    draw = ImageDraw.Draw(pillow_image)
-    draw.text(coordinate, text, font=font, fill=(color[0], color[1], color[2], 0))
-
-    image[:, :, :] = np.asarray(pillow_image)
-    return background_box
-
-def draw_point(image, point, size, color, edge_color=(0, 0, 0)):
-    x, y = point
-    edge_size = max(size // 5, 1)
-
-    b, g, r = color
-    eb, eg, er = edge_color
-
-    pillow_image = Image.fromarray(image)
-    drw = ImageDraw.Draw(pillow_image)
-    drw.ellipse(
-        [(x-size, y-size), (x+size, y+size)], 
-        (b, g, r, 0), (eb, eg, er, 0), edge_size
-    )
-    image[:, :, :] = np.asarray(pillow_image)
-
-def draw_rect(image, xyxy, color=(79, 244, 255), thickness=1):
-    cv2.rectangle(image, tuple(xyxy[:2]), tuple(xyxy[2:]), color, thickness)
-
-def show_image(winname, image, wait=-1, title=''):
-    cv2.imshow(winname, image)
-
-    if len(title) > 0:
-        cv2.setWindowTitle(winname, title)
-
-    key = None
-    if wait >= 0:
-        key = cv2.waitKey(wait)
-
-    return key
-
 def visualize_heatmaps(heatmaps, tags=None, image=None, option='SEISMIC', norm=False):
     vis_heatmaps = []
 
@@ -525,69 +745,6 @@ def resize(image, size=None, scale=None, mode='bicubic'):
         h, w = image.shape[:2]
         size = (int(w * scale), int(h * scale))
     return cv2.resize(image, size, interpolation=inp_dict[mode])
-
-class VideoReader:
-    """
-    [Example 1]
-    while True:
-        frame = video()
-        if frame is None:
-            break
-
-        cv2.imshow('Image', frame)
-        cv2.waitKey(1)
-    
-    [Example 2]
-    for i in range(0, len(video), video.fps):
-        frame = video[i]
-        
-        cv2.imshow('Image', frame)
-        cv2.waitKey(1)
-    """
-    def __init__(self, path):
-        self.video = cv2.VideoCapture(path)
-
-        self.width = int(self.video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self.video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.fps = int(self.video.get(cv2.CAP_PROP_FPS))
-
-    def __len__(self, cast_fn=int):
-        return cast_fn(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-    def __getitem__(self, index=None):
-        if index is not None:
-            self.video.set(cv2.CAP_PROP_POS_FRAMES, index)
-
-        ret, frame = self.video.read()
-        if not ret: frame = None
-
-        return frame
-    
-    def __call__(self):
-        return self.__getitem__()
-    
-class VideoWriter:
-    def __init__(self, path, width, height, fps):
-        self.width = width
-        self.height = height
-        self.fps = fps
-
-        self.path = path
-        self.open()
-
-    def open(self):
-        self.writer = cv2.VideoWriter(
-            self.path, 
-            cv2.VideoWriter_fourcc(*'MP4V'), 
-            self.fps, (self.width, self.height)
-        )
-
-    def __call__(self, frame):
-        self.writer.write(frame)
-        
-    def close(self):
-        self.writer.release()
-        self.writer = None
 
 def vstack(*images):
     return np.concatenate([image if len(image.shape) == 3 else convert(image) for image in images], axis=0)
