@@ -1,7 +1,7 @@
 # Copyright (C) 2025 * Ltd. All rights reserved.
 # author: Sanghyun Jo <shjo.april@gmail.com>
 
-__version__ = '1.6.0'
+__version__ = '1.6.6'
 
 from .misc import *
 from .cv_utils import *

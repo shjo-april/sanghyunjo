@@ -3,6 +3,7 @@
 
 import os
 import cv2
+import copy
 import cmapy
 import requests
 import warnings
@@ -63,6 +64,10 @@ class MouseState:
     x: int = 0
     y: int = 0
     event: int = MouseEvent.NONE
+    
+    @property
+    def point(self):
+        return self.x, self.y
 
 class MouseEventHandler:
     def __init__(self, winname):
@@ -73,8 +78,10 @@ class MouseEventHandler:
         cv2.setMouseCallback(winname, self)
 
     def get(self):
-        state, self.state = self.state, MouseState()
-        return state
+        current_state = copy.deepcopy(self.state)
+        if self.state.event in [MouseEvent.WHEEL_DOWN, MouseEvent.WHEEL_UP]:
+            self.state.event = MouseEvent.NONE
+        return current_state
 
     def move(self, x, y):
         self.state.x, self.state.y = x, y
@@ -297,10 +304,45 @@ def read_video(path):
 def write_video(path, frames, fps):
     return viwrite(path, frames, fps)
 
-# TODO: optimize/add existing/new functions below
-def draw_rect(image, xyxy, color=(79, 244, 255), thickness=1, dashed=False, step=10):
+def blend_images(image1, image2, alpha, mask_color=None):
     """
-    Draws a rectangle on the given image, with an option for a dashed border.
+    Blends two images using alpha transparency.
+
+    Args:
+        image1 (np.array): The base image.
+        image2 (np.array): The overlay image.
+        alpha (float): Blending factor (0.0 - 1.0), where 0.0 is fully image1 and 1.0 is fully image2.
+        mask_color (tuple | None): If provided, only blend pixels where image2 is not equal to this color.
+
+    Returns:
+        np.array: The blended image.
+
+    Example:
+        # Blend two images equally
+        blended = blend_images(img1, img2, alpha=0.5)
+
+        # Overlay img2 onto img1, ignoring black pixels in img2
+        blended = blend_images(img1, img2, alpha=0.5, mask_color=(0, 0, 0))
+    """
+    if mask_color is not None:
+        # Create a mask where image2 is not equal to mask_color
+        mask = (image2 != mask_color).any(axis=-1)
+
+        # Blend only the masked areas
+        image1[mask] = cv2.addWeighted(image1[mask], alpha, image2[mask], 1. - alpha, 0)
+        return image1
+    else:
+        # Blend the entire image
+        return cv2.addWeighted(image1, alpha, image2, 1. - alpha, 0.0)
+
+""" Deprecated aliases with warning """
+@deprecated("blend_images")
+def overlay(image1, image2, alpha):
+    return blend_images(image1, image2, alpha)
+
+def draw_rect(image, xyxy, color=(79, 244, 255), thickness=1, dashed=False, step=10, circle=False, radius=5, filled=True):
+    """
+    Draws a rectangle on the given image, with an option for a dashed border and corner circles.
 
     Args:
         image (np.array): The image on which the rectangle is drawn.
@@ -309,13 +351,16 @@ def draw_rect(image, xyxy, color=(79, 244, 255), thickness=1, dashed=False, step
         thickness (int): The thickness of the rectangle's border (default: 1).
         dashed (bool): If True, draws a dashed rectangle instead of a solid one (default: False).
         step (int): The gap size for the dashed effect (default: 10 pixels).
+        circle (bool): If True, draws circles at the corners of the rectangle (default: False).
+        radius (int): The radius of the corner circles (default: 5).
+        filled (bool): If True, fills the corner circles (default: True).
 
     Example:
-        # Draw a solid rectangle
-        draw_rect(img, (50, 50, 200, 200), color=(0, 255, 0), thickness=2, dashed=False)
+        # Draw a solid rectangle with corner circles
+        draw_rect(img, (50, 50, 200, 200), color=(0, 255, 0), thickness=2, circle=True)
 
-        # Draw a dashed rectangle
-        draw_rect(img, (250, 50, 400, 200), color=(0, 255, 0), thickness=2, dashed=True)
+        # Draw a dashed rectangle with corner circles
+        draw_rect(img, (250, 50, 400, 200), color=(0, 255, 0), thickness=2, dashed=True, circle=True)
     """
     xmin, ymin, xmax, ymax = xyxy
 
@@ -334,6 +379,74 @@ def draw_rect(image, xyxy, color=(79, 244, 255), thickness=1, dashed=False, step
             cv2.line(image, (xmin, y), (xmin, min(y + step, ymax)), color, thickness)
             cv2.line(image, (xmax, y), (xmax, min(y + step, ymax)), color, thickness)
 
+    if circle:
+        # Draw circles at the corners of the rectangle
+        circle_thickness = -1 if filled else thickness
+        cv2.circle(image, (xmin, ymin), radius, color, circle_thickness)
+        cv2.circle(image, (xmax, ymax), radius, color, circle_thickness)
+
+def draw_point(image, point, size, color, edge_color=(0, 0, 0), shape='circle'):
+    """
+    Draws a shape (circle, star, or V) at a given point on the image.
+
+    Args:
+        image (np.array): The image on which the shape is drawn.
+        point (tuple): (x, y) coordinates of the shape's center.
+        size (int): Size of the shape.
+        color (tuple): Fill color (B, G, R).
+        edge_color (tuple): Edge color (B, G, R), default black.
+        shape (str): Shape type ('circle', 'star', 'v').
+
+    Example:
+        draw_shape(img, (100, 100), 20, (255, 0, 0), shape='star')  # Draw a red star
+        draw_shape(img, (200, 200), 15, (0, 255, 0), shape='v')  # Draw a green V shape
+    """
+    x, y = point
+    edge_size = max(size // 5, 1)
+
+    # Convert OpenCV image to PIL format
+    pillow_image = Image.fromarray(image)
+    draw = ImageDraw.Draw(pillow_image)
+
+    if shape == 'circle':
+        # Draw a circle (same as original function)
+        draw.ellipse(
+            [(x - size, y - size), (x + size, y + size)],
+            fill=color, outline=edge_color, width=edge_size
+        )
+
+    elif shape == 'star':
+        # Define star points
+        star_points = [
+            (x, y - size),  # Top
+            (x + size * 0.3, y - size * 0.3),
+            (x + size, y - size * 0.2),
+            (x + size * 0.5, y + size * 0.2),
+            (x + size * 0.7, y + size),
+            (x, y + size * 0.5),
+            (x - size * 0.7, y + size),
+            (x - size * 0.5, y + size * 0.2),
+            (x - size, y - size * 0.2),
+            (x - size * 0.3, y - size * 0.3),
+        ]
+        draw.polygon(star_points, fill=color, outline=edge_color)
+
+    elif shape == 'v':
+        # Define V shape points (left shorter, right longer)
+        v_points = [
+            (x - size * 0.5, y - size * 0.2),  # Left top
+            (x, y + size),  # Bottom point
+            (x + size * 0.7, y - size * 0.5),  # Right top
+            (x + size * 0.5, y - size * 0.6),  # Right shorter inside
+            (x, y + size * 0.5),  # Inner bottom point
+            (x - size * 0.3, y - size * 0.1),  # Left shorter inside
+        ]
+        draw.polygon(v_points, fill=color, outline=edge_color)
+
+    # Convert back to OpenCV format
+    image[:, :, :] = np.asarray(pillow_image)
+
+# TODO: optimize/add existing/new functions below
 def colorize(cam, option='SEISMIC'):
     color_dict = {
         'JET': cv2.COLORMAP_JET,
@@ -393,21 +506,6 @@ def draw_text(
 
     image[:, :, :] = np.asarray(pillow_image)
     return background_box
-
-def draw_point(image, point, size, color, edge_color=(0, 0, 0)):
-    x, y = point
-    edge_size = max(size // 5, 1)
-
-    b, g, r = color
-    eb, eg, er = edge_color
-
-    pillow_image = Image.fromarray(image)
-    drw = ImageDraw.Draw(pillow_image)
-    drw.ellipse(
-        [(x-size, y-size), (x+size, y+size)], 
-        (b, g, r, 0), (eb, eg, er, 0), edge_size
-    )
-    image[:, :, :] = np.asarray(pillow_image)
 
 def interpolate_colors(c1, c2, n=256):
     c1 = np.asarray(c1, dtype=np.float32) / 255.
@@ -768,9 +866,6 @@ def cv2pil(image: np.ndarray) -> Image:
 
 def pil2cv(image: Image) -> np.ndarray:
     return convert(np.asarray(image), 'rgb2bgr')
-
-def overlay(image1, image2, alpha):
-    return cv2.addWeighted(image1, alpha, image2, 1. - alpha, 0.0)
 
 def get_size(image) -> tuple:
     if isinstance(image, np.ndarray): # cv
