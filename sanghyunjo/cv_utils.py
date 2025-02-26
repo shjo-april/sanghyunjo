@@ -446,8 +446,77 @@ def draw_point(image, point, size, color, edge_color=(0, 0, 0), shape='circle'):
     # Convert back to OpenCV format
     image[:, :, :] = np.asarray(pillow_image)
 
-# TODO: optimize/add existing/new functions below
-def colorize(cam, option='SEISMIC'):
+def denorm(image: np.ndarray) -> np.ndarray:
+    """Convert a normalized image (0 to 1 range) to an 8-bit image (0 to 255 range).
+
+    Args:
+        image (np.ndarray): Input image with values in the range [0, 1].
+
+    Returns:
+        np.ndarray: Image with values scaled to the range [0, 255] as uint8.
+    """
+    return (image * 255).astype(np.uint8)
+
+
+def resize(image, size=None, scale=None, mode='bicubic'):
+    """Resize an image using a specified interpolation mode.
+    
+    Args:
+        image (np.ndarray): Input image.
+        size (tuple, optional): Target size (width, height). Default is None.
+        scale (float, optional): Scale factor for resizing. Default is None.
+        mode (str, optional): Interpolation mode ('bicubic' or 'nearest'). Default is 'bicubic'.
+
+    Returns:
+        np.ndarray: Resized image.
+    """
+    if size is None and scale is None:
+        raise ValueError("Either 'size' or 'scale' must be provided.")
+
+    if size is not None:
+        size = get_size(size) if not isinstance(size, tuple) else size
+    elif scale is not None:
+        h, w = image.shape[:2]
+        size = (int(w * scale), int(h * scale))
+
+    interpolation_modes = {
+        "bicubic": cv2.INTER_CUBIC,
+        "nearest": cv2.INTER_NEAREST,
+        "bilinear": cv2.INTER_LINEAR,
+    }
+    if mode not in interpolation_modes:
+        raise ValueError(f"Invalid mode '{mode}'. Choose from {list(interpolation_modes.keys())}.")
+
+    return cv2.resize(image, size, interpolation=interpolation_modes[mode])
+
+def resize_mask(image, size=None, scale=None, mode='nearest'):
+    """Resize a mask image, ensuring it is in the correct format.
+
+    Args:
+        image (np.ndarray): Input mask image.
+        size (tuple, optional): Target size (width, height). Default is None.
+        scale (float, optional): Scale factor for resizing. Default is None.
+
+    Returns:
+        np.ndarray: Resized mask image.
+    """
+    if image.dtype in [np.float32, np.float64]:
+        image = denorm(image)
+        
+    return resize(image, size, scale, mode)
+
+def colorize(cam: np.ndarray, option: str = 'SEISMIC') -> np.ndarray:
+    """Apply a colormap to a given grayscale or single-channel image.
+
+    Args:
+        cam (np.ndarray): Input image (grayscale or single-channel).
+        option (str, optional): Colormap option. Defaults to 'SEISMIC'.
+            Available options: 'JET', 'HOT', 'SUMMER', 'WINTER',
+            'INFERNO', 'GRAY', 'SEISMIC', 'VIRIDIS'.
+
+    Returns:
+        np.ndarray: Colorized image.
+    """
     color_dict = {
         'JET': cv2.COLORMAP_JET,
         'HOT': cv2.COLORMAP_HOT,
@@ -458,18 +527,25 @@ def colorize(cam, option='SEISMIC'):
         'SEISMIC': cmapy.cmap('seismic'),
         'VIRIDIS': cmapy.cmap('viridis'),
     }
-    
+
+    if option not in color_dict:
+        raise ValueError(f"Invalid colormap option '{option}'. Choose from {list(color_dict.keys())}.")
+
+    # Normalize float images to 0-255 range
     if cam.dtype in [np.float32, np.float64]:
-        cam = (cam * 255).astype(np.uint8)
-    
-    if len(cam.shape) == 3:
+        cam = denorm(cam)
+
+    # If input has multiple channels, take the maximum projection
+    if cam.ndim == 3:
         cam = np.max(cam, axis=0)
-    
-    colors = color_dict[option] if isinstance(option, str) else option
+
+    # Apply colormap
+    colors = color_dict[option]
     cam = cv2.applyColorMap(cam, colors)
-    
+
     return cam
 
+# TODO: optimize/add existing/new functions below
 def draw_text(
         image: np.ndarray, text: str, coordinate: tuple, color: tuple=(0, 0, 0), 
         font_path: str=None, font_size: int=20, 
@@ -830,19 +906,6 @@ def visualize_heatmaps(heatmaps, tags=None, image=None, option='SEISMIC', norm=F
         vis_heatmaps.append(heatmap)
 
     return np.concatenate(vis_heatmaps, axis=1)
-
-def resize(image, size=None, scale=None, mode='bicubic'):
-    if not isinstance(size, tuple) and size is not None:
-        size = get_size(size)
-    
-    inp_dict = {
-        'bicubic': cv2.INTER_CUBIC,
-        'nearest': cv2.INTER_NEAREST,
-    }
-    if scale is not None:
-        h, w = image.shape[:2]
-        size = (int(w * scale), int(h * scale))
-    return cv2.resize(image, size, interpolation=inp_dict[mode])
 
 def vstack(*images):
     return np.concatenate([image if len(image.shape) == 3 else convert(image) for image in images], axis=0)
