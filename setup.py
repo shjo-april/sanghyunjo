@@ -14,7 +14,8 @@ setup(
         'cmapy',
         'tqdm',
         'opencv-python',
-        'Pillow'
+        'Pillow',
+        'requests'
     ],
     packages=find_packages(exclude=[]),
     keywords=['sanghyun', 'sanghyunjo', 'shjo', 'ai', 'utils', 'wrapper'],
