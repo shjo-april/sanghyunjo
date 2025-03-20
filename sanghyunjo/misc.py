@@ -28,18 +28,17 @@ def makedir(path):
     os.makedirs(path, exist_ok=True)
     return path
 
-def get_name(path, ext=False) -> str:
+def get_filename(path, split_ext=False) -> str:
     filename = os.path.basename(path)
-    if not ext: 
+    if not split_ext: 
         return filename
     else:
         extension = filename.split('.')[-1]
-        return filename, extension
+        return filename.replace('.'+extension), extension
 
 def replace_ext(path: str='image.jpg', extension: str='png') -> str:
     prev_extension = path.split('.')[-1]
-    # return path.replace('.'+prev_extension, '.'+extension)
-    return path.replace('.'+prev_extension, extension) # for removing an extension
+    return path.replace('.'+prev_extension, '.'+extension) # for removing an extension
 
 def isfile(path): # file or dir
     return os.path.isfile(path) or os.path.isdir(path)
