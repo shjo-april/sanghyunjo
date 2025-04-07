@@ -15,7 +15,8 @@ setup(
         'tqdm',
         'opencv-python',
         'Pillow',
-        'requests'
+        'requests',
+        'scikit-learn'
     ],
     packages=find_packages(exclude=[]),
     keywords=['sanghyun', 'sanghyunjo', 'shjo', 'ai', 'utils', 'wrapper'],

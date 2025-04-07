@@ -8,6 +8,7 @@ import glob
 import tqdm
 import argparse
 
+from typing import Union, Tuple
 from joblib import Parallel, delayed
 
 def set_gpus(gpus: str='0'):
@@ -28,17 +29,26 @@ def makedir(path):
     os.makedirs(path, exist_ok=True)
     return path
 
-def get_filename(path, split_ext=False) -> str:
+def basename(path, split_ext=False, remove_ext=False, replace_ext='') -> Union[str, Tuple[str, str]]:
+    """
+    basename("/some/dir/file.txt")                     # 'file.txt'
+    basename("/some/dir/file.txt", split_ext=True)     # ('file', '.txt')
+    basename("/some/dir/file.txt", remove_ext=True)    # 'file'
+    basename("/some/dir/file.txt", replace_ext='.md')  # 'file.md'
+    """
     filename = os.path.basename(path)
-    if not split_ext: 
-        return filename
-    else:
-        extension = filename.split('.')[-1]
-        return filename.replace('.'+extension), extension
 
-def replace_ext(path: str='image.jpg', extension: str='png') -> str:
-    prev_extension = path.split('.')[-1]
-    return path.replace('.'+prev_extension, '.'+extension) # for removing an extension
+    if split_ext or remove_ext or replace_ext:
+        file_id, ext = os.path.splitext(filename)
+
+        if split_ext:
+            return file_id, ext
+        elif remove_ext:
+            return file_id
+        else:
+            return file_id + replace_ext
+    
+    return filename
 
 def isfile(path): # file or dir
     return os.path.isfile(path) or os.path.isdir(path)
