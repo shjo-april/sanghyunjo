@@ -211,14 +211,7 @@ def imwrite(path, image, palette=None):
         # Validate palette as ndarray
         if not isinstance(palette, np.ndarray):
             raise TypeError("Palette must be a NumPy array, string keyword, or None.")
-
-        if palette.ndim == 2 and palette.shape == (256, 3):
-            palette = palette.flatten()
-        elif palette.ndim == 1 and palette.shape[0] == 768:
-            pass  # already flattened
-        else:
-            raise ValueError("Palette must be of shape (256, 3) or (768,), got shape: {}".format(palette.shape))
-
+        
         if palette.dtype != np.uint8:
             raise TypeError("Palette must have dtype np.uint8.")
 
