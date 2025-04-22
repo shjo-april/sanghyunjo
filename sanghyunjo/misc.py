@@ -11,8 +11,12 @@ import argparse
 from typing import Union, Tuple
 from joblib import Parallel, delayed
 
-def set_gpus(gpus: str='0'):
-    os.environ['CUDA_VISIBLE_DEVICES'] = gpus
+def set_env(params: dict={'CUDA_VISIBLE_DEVICES': '0'}):
+    for key in params.keys():
+        os.environ[key] = params[key]
+
+def get_env(key: str='CUDA_VISIBLE_DEVICES'):
+    return os.environ[key]
 
 def gpus(key='CUDA_VISIBLE_DEVICES'):
     try: os.environ[key]
@@ -83,23 +87,23 @@ class Timer:
     def __enter__(self):
         self.start = time.time()
         return self
-    
-    def get(self, duration='milliseconds'):
-        end = time.time()
-        interval = end - self.start
-        
-        if duration is not None:
-            if duration == 'seconds':
-                interval = f'{int(interval)}s'
-            elif duration == 'milliseconds':
-                interval = f'{int(interval*1000)}ms'
-            else:
-                pass
-        
-        self.start = end
-        return interval
-    
-    def __exit__(self, _type, _value, _trackback):
+
+    def get(self, unit='ms', as_str=True):
+        """Return elapsed time since last call or start."""
+        now = time.time()
+        elapsed = now - self.start
+        self.start = now
+
+        if unit == 's':
+            value = elapsed
+            suffix = 's'
+        else:  # default to milliseconds
+            value = elapsed * 1000
+            suffix = 'ms'
+
+        return f'{int(value)}{suffix}' if as_str else value
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
 class Progress:
@@ -120,22 +124,28 @@ class Parser:
     def __init__(self, input_dict: dict=None):
         self.parser = argparse.ArgumentParser()
         if input_dict is not None:
-            self.add_from_inputs(input_dict)
+            self.args = self._add_from_inputs(input_dict)
+        self.args = self.parser.parse_args()
     
-    def add(self, tag, default):
+    def _add(self, tag, default):
         if isinstance(default, bool): option = {"action": "store_false"} if default else {'action': 'store_true'}
         elif isinstance(default, list): option = {'nargs': '+', 'default': default, 'type': type(default[0])}
         else: option = {'default': default, 'type': type(default)}
         self.parser.add_argument(f'--{tag}', **option)
 
-    def add_from_inputs(self, inputs):
+    def _add_from_inputs(self, inputs):
         if isinstance(inputs, list):
             for data in inputs:
-                self.add(*data)
+                self._add(*data)
         else:
             for tag in inputs.keys():
-                self.add(tag, inputs[tag])
+                self._add(tag, inputs[tag])
         return self.get()
+    
+    def __getattr__(self, name):
+        # allow direct access to parsed arguments via attributes
+        return getattr(self.args, name)
 
     def get(self): 
-        return self.parser.parse_args()
+        # provided for backward compatibility with previous usage
+        return self.args

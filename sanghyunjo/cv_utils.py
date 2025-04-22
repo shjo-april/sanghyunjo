@@ -56,8 +56,8 @@ class MouseEvent:
     RIGHT_UP: int = 5
     WHEEL_UP: int = 6
     WHEEL_DOWN: int = 7
-    LEFT_MOVE: int = 8  # 추가
-    RIGHT_MOVE: int = 9  # 추가
+    LEFT_MOVE: int = 8
+    RIGHT_MOVE: int = 9
 
 @dataclass
 class MouseState:
@@ -128,17 +128,17 @@ class MouseEventHandler:
         elif event == cv2.EVENT_MOUSEWHEEL:
             self.wheelup() if flags > 0 else self.wheeldown()
 
-def imread(path, color=None, backend='opencv'):
+def imread(path, backend='opencv', color=None):
     """
     Loads an image using OpenCV or Pillow.
 
     Args:
         path (str): Path to the image file.
-        color_mode (str | None): Color mode ('gray', 'rgb', or None for unchanged).
-        backend (str): Library to use ('opencv' or 'pillow').
-
+        backend (str): Backend to use for loading ('opencv', 'pillow', or 'mask').
+        color (str | None): Color mode ('gray', 'rgb', or None for unchanged).
+    
     Returns:
-        np.array or PIL.Image: Loaded image in the specified format, or None if not found.
+        np.ndarray or PIL.Image.Image or None: Loaded image, or None if file not found.
     """
     color_modes = {
         'opencv': {
@@ -149,40 +149,87 @@ def imread(path, color=None, backend='opencv'):
         'pillow': {
             'gray': 'L',
             'rgb': 'RGB',
-            None: None
+            None: None,  # Leave as-is
+        },
+        'mask': {
+            None: None,  # Treated as palette image via PIL
         }
     }
 
     try:
         if backend == 'opencv':
-            return cv2.imdecode(np.fromfile(path, np.uint8), color_modes['opencv'].get(color, cv2.IMREAD_UNCHANGED))
-        else:
+            # Load image using OpenCV with appropriate color mode
+            flag = color_modes['opencv'].get(color, cv2.IMREAD_UNCHANGED)
+            return cv2.imdecode(np.fromfile(path, np.uint8), flag)
+
+        elif backend == 'mask':
+            # Load image for mask purposes (e.g., with color palette)
+            return np.asarray(Image.open(path)).copy()
+
+        else:  # 'pillow' backend
             image = Image.open(path)
-            return image if color_modes['pillow'].get(color) is None else image.convert(color_modes['pillow'][color])
+            mode = color_modes['pillow'].get(color)
+            return image if mode is None else image.convert(mode)
+
     except FileNotFoundError:
         return None
 
 def imwrite(path, image, palette=None):
     """
-    Saves an image using OpenCV or Pillow.
+    Saves an image using OpenCV or Pillow. Supports saving with a custom color palette 
+    for indexed color images (e.g., masks).
 
     Args:
         path (str): File path to save the image.
-        image (np.array or PIL.Image): Image to save.
-        palette (list | None): Optional palette for indexed color images.
+        image (np.ndarray or PIL.Image.Image): The image to be saved.
+        palette (Union[np.ndarray, str, None]): Optional color palette for paletted images.
+            - If None: save as a standard image using OpenCV.
+            - If 'voc': use predefined VOC color palette (requires get_colors()).
+            - If 'gray' or 'g': use 2-class grayscale palette.
+            - If np.ndarray: must be shape (768,) or (256, 3), dtype=uint8.
 
     Returns:
         bool: True if the image is successfully saved, False otherwise.
+
+    Examples:
+        >>> imwrite("output.png", img_array)
+        >>> imwrite("mask.png", mask_array, palette='voc')
     """
     try:
         if palette is None:
             return cv2.imwrite(path, image)
+
+        # Resolve predefined palette string
+        if isinstance(palette, str):
+            if palette.lower() == 'voc':
+                palette = get_colors()  # Must return shape (256, 3), dtype=uint8
+            elif palette.lower() in ['gray', 'g']:
+                palette = np.array([[0]*3, [255]*3], dtype=np.uint8)
+            else:
+                raise ValueError(f"Unsupported palette keyword: {palette}")
+
+        # Validate palette as ndarray
+        if not isinstance(palette, np.ndarray):
+            raise TypeError("Palette must be a NumPy array, string keyword, or None.")
+
+        if palette.ndim == 2 and palette.shape == (256, 3):
+            palette = palette.flatten()
+        elif palette.ndim == 1 and palette.shape[0] == 768:
+            pass  # already flattened
         else:
-            img = Image.fromarray(image.astype(np.uint8)).convert('P')
-            img.putpalette(palette)
-            img.save(path)
-            return True
-    except Exception:
+            raise ValueError("Palette must be of shape (256, 3) or (768,), got shape: {}".format(palette.shape))
+
+        if palette.dtype != np.uint8:
+            raise TypeError("Palette must have dtype np.uint8.")
+
+        # Convert and save as paletted PNG
+        img = Image.fromarray(image.astype(np.uint8)).convert('P')
+        img.putpalette(palette)
+        img.save(path)
+        return True
+
+    except Exception as e:
+        print(f"[imwrite error] {e}")  # Optional: log or silence
         return False
 
 def imshow(winname, image, wait=-1, title=''):
@@ -304,36 +351,47 @@ def read_video(path):
 def write_video(path, frames, fps):
     return viwrite(path, frames, fps)
 
-def blend_images(image1, image2, alpha, mask_color=None):
+def blend_images(image1, image2_or_color, alpha, mask=None):
     """
-    Blends two images using alpha transparency.
+    Blends an image with another image or a single color.
 
     Args:
-        image1 (np.array): The base image.
-        image2 (np.array): The overlay image.
-        alpha (float): Blending factor (0.0 - 1.0), where 0.0 is fully image1 and 1.0 is fully image2.
-        mask_color (tuple | None): If provided, only blend pixels where image2 is not equal to this color.
+        image1 (np.array): The base image to blend into.
+        image2_or_color (np.array or tuple): Another image (same shape) or a color (e.g., (255, 0, 0)).
+        alpha (float): Blending factor between image1 and image2_or_color.
+        mask (np.array | None): Optional boolean mask for blending area.
 
     Returns:
-        np.array: The blended image.
+        np.array: Blended image.
 
-    Example:
-        # Blend two images equally
-        blended = blend_images(img1, img2, alpha=0.5)
+    Examples:
+        # Case 1: image + color
+        blended = blend_images(image, (0, 255, 0), 0.5)
 
-        # Overlay img2 onto img1, ignoring black pixels in img2
-        blended = blend_images(img1, img2, alpha=0.5, mask_color=(0, 0, 0))
+        # Case 2: image + image
+        blended = blend_images(image1, image2, 0.3)
+
+        # Case 3: image + color + mask
+        blended = blend_images(image, (255, 0, 0), 0.4, mask=box.mask)
     """
-    if mask_color is not None:
-        # Create a mask where image2 is not equal to mask_color
-        mask = (image2 != mask_color).any(axis=-1)
+    if isinstance(image2_or_color, np.ndarray) and len(image2_or_color.shape) == 1:
+        image2_or_color = tuple(image2_or_color)
 
-        # Blend only the masked areas
-        image1[mask] = cv2.addWeighted(image1[mask], alpha, image2[mask], 1. - alpha, 0)
+    if isinstance(image2_or_color, tuple) or isinstance(image2_or_color, list):
+        # Assume it's a color, create a solid image with same shape as image1
+        overlay = np.full_like(image1, image2_or_color)
+    else:
+        # Assume it's an image (must be same shape)
+        overlay = image2_or_color
+
+    if mask is not None:
+        if mask.dtype != np.bool_:
+            mask = mask > 0
+
+        image1[mask] = cv2.addWeighted(image1[mask], 1 - alpha, overlay[mask], alpha, 0)
         return image1
     else:
-        # Blend the entire image
-        return cv2.addWeighted(image1, alpha, image2, 1. - alpha, 0.0)
+        return cv2.addWeighted(image1, 1 - alpha, overlay, alpha, 0)
 
 """ Deprecated aliases with warning """
 @deprecated("blend_images")
@@ -545,11 +603,52 @@ def colorize(cam: np.ndarray, option: str = 'SEISMIC') -> np.ndarray:
 
     return cam
 
+def clamp_coords(coords, width: int, height: int):
+    """
+    Clamps a bounding box or a point to stay within image boundaries.
+
+    Args:
+        coords (Tuple[float]): A tuple representing either a box (xmin, ymin, xmax, ymax)
+                               or a point (cx, cy).
+        width (int): Width of the image.
+        height (int): Height of the image.
+
+    Returns:
+        Tuple[int]: Clamped and rounded coordinates.
+                    - (xmin, ymin, xmax, ymax) if input was a box
+                    - (cx, cy) if input was a point
+
+    Examples:
+        >>> clamp_coords((10.6, -5, 1284, 970), width=1280, height=960)
+        (11, 0, 1279, 959)
+
+        >>> clamp_coords((640.2, -10), width=1280, height=720)
+        (640, 0)
+    """
+    coords = tuple(int(round(x)) for x in coords)
+
+    if len(coords) == 4:
+        xmin, ymin, xmax, ymax = coords
+        xmin = min(max(xmin, 0), width - 1)
+        ymin = min(max(ymin, 0), height - 1)
+        xmax = min(max(xmax, 0), width - 1)
+        ymax = min(max(ymax, 0), height - 1)
+        return xmin, ymin, xmax, ymax
+
+    elif len(coords) == 2:
+        cx, cy = coords
+        cx = min(max(cx, 0), width - 1)
+        cy = min(max(cy, 0), height - 1)
+        return cx, cy
+
+    else:
+        raise ValueError("Input must be either a 2D point or a 4D bounding box.")
+
 # TODO: optimize/add existing/new functions below
 def draw_text(
         image: np.ndarray, text: str, coordinate: tuple, color: tuple=(0, 0, 0), 
         font_path: str=None, font_size: int=20, 
-        background: tuple=(79, 244, 255), centering: bool=True, padding: int=5
+        background: tuple=(79, 244, 255), centering: bool=False, padding: int=5
     ):
     if font_path is None:
         font_path = os.path.join(os.path.dirname(__file__), 'fonts', 'Times New Roman MT Std.otf')

@@ -16,7 +16,10 @@ setup(
         'opencv-python',
         'Pillow',
         'requests',
-        'scikit-learn'
+        
+        # 'scikit-learn' and 'torch' are optional dependencies (e.g., for GPU or ML features)
+        # 'scikit-learn',
+        # 'torch'
     ],
     packages=find_packages(exclude=[]),
     keywords=['sanghyun', 'sanghyunjo', 'shjo', 'ai', 'utils', 'wrapper'],

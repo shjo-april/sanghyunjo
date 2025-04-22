@@ -8,10 +8,6 @@ import numpy as np
 
 from torch.nn import functional as F
 
-# pip install scikit-learn for PCA
-from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
-
 """
 from .misc import get_name
 from .json_utils import read_json
@@ -102,21 +98,6 @@ def match_size(tensor: torch.Tensor, target: torch.Tensor, mode: str = 'nearest'
     """
     return resize_tensor(tensor, target.shape[-2:], mode)
 
-def normalize(masks: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
-    """Normalize a tensor to the range [eps, 1 - eps].
-
-    Args:
-        masks (torch.Tensor): Input tensor to normalize.
-        eps (float, optional): Small epsilon value to avoid extreme values. Defaults to 1e-3.
-
-    Returns:
-        torch.Tensor: Normalized tensor with values in the range [eps, 1 - eps].
-    """
-    min_v, max_v = masks.view(masks.shape[0], -1).aminmax(dim=1)
-    min_v, max_v = min_v[:, None, None], max_v[:, None, None]
-    masks = (masks - min_v) / (max_v - min_v)
-    return masks.clamp(min=eps, max=1. - eps)
-
 def count_params(params, unit: float = 1e6) -> float:
     """Count the total number of parameters in a model.
 
@@ -140,5 +121,139 @@ def pca_reduce(vectors: np.ndarray, dim: int = 3, seed: int = 0) -> np.ndarray:
     Returns:
         np.ndarray: Transformed array of shape (n_samples, dim).
     """
+    # pip install scikit-learn
+    from sklearn.decomposition import PCA
     pca = PCA(n_components=dim, random_state=seed)
     return pca.fit_transform(vectors)
+
+def masks_to_boxes(masks: np.ndarray) -> np.ndarray:
+    """
+    Compute bounding boxes from binary masks.
+
+    Args:
+        masks (np.array): Boolean or binary masks of shape (N, H, W)
+
+    Returns:
+        np.array: Bounding boxes in (N, 4) format: [x_min, y_min, x_max, y_max]
+    """
+    boxes = []
+
+    for mask in masks:
+        # Find non-zero pixels
+        ys, xs = np.where(mask > 0)
+
+        if len(xs) == 0 or len(ys) == 0:
+            boxes.append([0, 0, 0, 0])  # No object found
+        else:
+            x_min, x_max = xs.min(), xs.max()
+            y_min, y_max = ys.min(), ys.max()
+            boxes.append([x_min, y_min, x_max, y_max])
+
+    return np.array(boxes)
+
+def stack(inputs, dim=0):
+    """
+    Stacks a list or array of tensors/arrays along a specified dimension.
+
+    Args:
+        inputs (Union[List[np.ndarray], np.ndarray, List[torch.Tensor]]): 
+            The input collection to be stacked. Can be:
+              - A list of NumPy arrays
+              - A NumPy array of arrays
+              - A list of PyTorch tensors
+        dim (int): The dimension along which to stack the inputs. 
+            Corresponds to `axis` in NumPy and `dim` in PyTorch.
+
+    Returns:
+        Union[np.ndarray, torch.Tensor]: 
+            A stacked NumPy array or PyTorch tensor, depending on input type.
+
+    Raises:
+        TypeError: If the input is neither a NumPy array nor a list of PyTorch tensors.
+
+    Examples:
+        >>> import sanghyunjo.ai_utils as shai
+        >>> shai.stack([np.ones((2, 2)), np.zeros((2, 2))], dim=0).shape # (2, 2, 2)
+        >>> shai.stack([torch.tensor([1, 2]), torch.tensor([3, 4])], dim=1) # tensor([[1, 3], [2, 4]])
+    """
+    if isinstance(inputs[0], np.ndarray):
+        return np.stack(inputs, axis=dim)
+    elif isinstance(inputs[0], torch.Tensor):
+        return torch.stack(inputs, dim=dim)
+    else:
+        raise TypeError("Unsupported input type for stack(). Expected NumPy array or list of torch.Tensors.")
+    
+def cat(inputs, dim=0):
+    """
+    Concatenates a sequence of arrays or tensors along an existing dimension.
+
+    Args:
+        inputs (Union[List[np.ndarray], List[torch.Tensor]]): 
+            A list of arrays or tensors to concatenate. All elements must have the same shape, except in the concatenation dimension.
+        dim (int): The dimension along which to concatenate. 
+            Corresponds to `axis` in NumPy and `dim` in PyTorch.
+
+    Returns:
+        Union[np.ndarray, torch.Tensor]: 
+            A concatenated NumPy array or PyTorch tensor, depending on input type.
+
+    Raises:
+        TypeError: If the input is neither a list of NumPy arrays nor a list of PyTorch tensors.
+
+    Examples:
+        >>> import sanghyunjo.ai_utils as shai
+        >>> shai.cat([np.ones((2, 2)), np.zeros((2, 2))], dim=0).shape # (4, 2)
+        >>> shai.cat([torch.tensor([[1], [2]]), torch.tensor([[3], [4]])], dim=1) # tensor([[1, 3], [2, 4]])
+    """
+    if isinstance(inputs[0], np.ndarray):
+        return np.concatenate(inputs, axis=dim)
+    elif isinstance(inputs[0], torch.Tensor):
+        return torch.cat(inputs, dim=dim)
+    else:
+        raise TypeError("Unsupported input type for cat(). Expected list of NumPy arrays or list of torch.Tensors.")
+
+def minmax(inputs, dim=0):
+    """
+    Computes the minimum and maximum values along a specified dimension.
+
+    Args:
+        inputs (Union[np.ndarray, torch.Tensor]):
+            Input array or tensor.
+        dim (int): The dimension along which to compute min and max.
+
+    Returns:
+        Tuple: (min_values, max_values), both of same type as inputs.
+
+    Raises:
+        TypeError: If input is not a NumPy array or PyTorch tensor.
+
+    Examples:
+        >>> import sanghyunjo.ai_utils as shai
+
+        >>> shai.minmax(np.array([[1, 2], [3, 4]]), dim=0)
+        (array([1, 2]), array([3, 4]))
+
+        >>> shai.minmax(torch.tensor([[1, 2], [3, 4]]), dim=1)
+        (tensor([1, 3]), tensor([2, 4]))
+    """
+    if isinstance(inputs, np.ndarray):
+        return np.min(inputs, axis=dim), np.max(inputs, axis=dim)
+    elif isinstance(inputs, torch.Tensor):
+        return tuple(inputs.aminmax(dim=dim))
+    else:
+        raise TypeError("Unsupported input type for minmax(). Expected np.ndarray or torch.Tensor.")
+    
+def normalize(masks: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
+    """Normalize a tensor to the range [eps, 1 - eps].
+
+    Args:
+        masks (torch.Tensor): Input tensor to normalize.
+        eps (float, optional): Small epsilon value to avoid extreme values. Defaults to 1e-3.
+
+    Returns:
+        torch.Tensor: Normalized tensor with values in the range [eps, 1 - eps].
+    """
+    min_v, max_v = masks.view(masks.shape[0], -1).aminmax(dim=1)
+    min_v, max_v = min_v[:, None, None], max_v[:, None, None]
+    masks = (masks - min_v) / (max_v - min_v)
+    return masks.clamp(min=eps, max=1. - eps)
