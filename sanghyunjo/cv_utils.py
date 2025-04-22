@@ -5,6 +5,7 @@ import os
 import cv2
 import copy
 import cmapy
+import random
 import requests
 import warnings
 import functools
@@ -636,6 +637,29 @@ def clamp_coords(coords, width: int, height: int):
 
     else:
         raise ValueError("Input must be either a 2D point or a 4D bounding box.")
+
+def randomize_color(color=None, variation=30):
+    """
+    Returns a randomized RGB color.
+
+    Args:
+        color (Tuple[int, int, int] or None): 
+            Base RGB color. If None, a random RGB color will be generated.
+        variation (int): 
+            Maximum variation per channel when color is given.
+
+    Returns:
+        Tuple[int, int, int]: Randomized RGB color.
+    """
+    if color is None:
+        # Return a completely random RGB color
+        return tuple(random.randint(0, 255) for _ in range(3))
+    else:
+        # Slightly perturb the base color within variation range
+        return tuple(
+            min(255, max(0, c + random.randint(-variation, variation)))
+            for c in color
+        )
 
 # TODO: optimize/add existing/new functions below
 def draw_text(
