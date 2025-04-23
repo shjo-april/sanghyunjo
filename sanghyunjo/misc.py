@@ -121,16 +121,19 @@ class Progress:
         pass
 
 class Parser:
-    def __init__(self, input_dict: dict=None):
+    def __init__(self, input_dict: dict = None):
         self.parser = argparse.ArgumentParser()
         if input_dict is not None:
-            self.args = self._add_from_inputs(input_dict)
+            self._add_from_inputs(input_dict)
         self.args = self.parser.parse_args()
-    
+
     def _add(self, tag, default):
-        if isinstance(default, bool): option = {"action": "store_false"} if default else {'action': 'store_true'}
-        elif isinstance(default, list): option = {'nargs': '+', 'default': default, 'type': type(default[0])}
-        else: option = {'default': default, 'type': type(default)}
+        if isinstance(default, bool):
+            option = {"action": "store_false"} if default else {"action": "store_true"}
+        elif isinstance(default, list):
+            option = {"nargs": "+", "default": default, "type": type(default[0])}
+        else:
+            option = {"default": default, "type": type(default)}
         self.parser.add_argument(f'--{tag}', **option)
 
     def _add_from_inputs(self, inputs):
@@ -138,14 +141,16 @@ class Parser:
             for data in inputs:
                 self._add(*data)
         else:
-            for tag in inputs.keys():
-                self._add(tag, inputs[tag])
-        return self.get()
-    
-    def __getattr__(self, name):
-        # allow direct access to parsed arguments via attributes
-        return getattr(self.args, name)
+            for tag, default in inputs.items():
+                self._add(tag, default)
 
-    def get(self): 
-        # provided for backward compatibility with previous usage
+    def __getattr__(self, name):
+        # Prevent recursion by checking internal __dict__
+        args = self.__dict__.get('args', None)
+        if args is not None:
+            return getattr(args, name)
+        raise AttributeError(f"'Parser' object has no attribute '{name}'")
+
+    def get(self):
+        # Provided for backward compatibility with previous usage
         return self.args
