@@ -283,7 +283,7 @@ class VideoReader:
         self.video = cv2.VideoCapture(path)
         self.width = int(self.video.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.video.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.fps = int(self.video.get(cv2.CAP_PROP_FPS))
+        self.fps = round(self.video.get(cv2.CAP_PROP_FPS))
 
     def __len__(self, cast_fn=int):
         return cast_fn(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
