@@ -510,26 +510,84 @@ def denorm(image: np.ndarray) -> np.ndarray:
     return (image * 255).astype(np.uint8)
 
 
-def resize(image, size=None, scale=None, mode='bicubic'):
-    """Resize an image using a specified interpolation mode.
-    
+def resize(image: np.ndarray,
+           size: tuple = None,
+           scale: float = None,
+           max_image_size: int = None,
+           min_image_size: int = None,
+           mode: str = 'bicubic') -> np.ndarray:
+    """Resize an image using a specified interpolation mode, with optional size constraints.
+
     Args:
         image (np.ndarray): Input image.
         size (tuple, optional): Target size (width, height). Default is None.
         scale (float, optional): Scale factor for resizing. Default is None.
-        mode (str, optional): Interpolation mode ('bicubic' or 'nearest'). Default is 'bicubic'.
+        max_image_size (int, optional): Maximum size (height or width) of the resized image.
+            The image will be resized to fit within this maximum dimension while preserving aspect ratio.
+            Default is None.
+        min_image_size (int, optional): Minimum size (height or width) of the resized image.
+            The image will be resized to fit within this minimum dimension while preserving aspect ratio.
+            Default is None.
+        mode (str, optional): Interpolation mode.  Choose from 'bicubic', 'nearest', or 'bilinear'.
+            Default is 'bicubic'.
 
     Returns:
         np.ndarray: Resized image.
+
+    Raises:
+        ValueError: If neither 'size', 'scale', 'max_image_size', nor 'min_image_size' is provided,
+            or if an invalid interpolation 'mode' is specified.
     """
-    if size is None and scale is None:
-        raise ValueError("Either 'size' or 'scale' must be provided.")
+    if size is None and scale is None and max_image_size is None and min_image_size is None:
+        raise ValueError("Either 'size', 'scale', 'max_image_size', or 'min_image_size' must be provided.")
+
+    h, w = image.shape[:2]  # Get image height and width
+    target_size = None
 
     if size is not None:
-        size = get_size(size) if not isinstance(size, tuple) else size
+        target_size = tuple(size)  # Use provided size directly
     elif scale is not None:
-        h, w = image.shape[:2]
-        size = (int(w * scale), int(h * scale))
+        target_size = (int(w * scale), int(h * scale))  # Calculate size from scale
+    elif max_image_size is not None:
+        # Calculate new dimensions to fit within max_image_size
+        if h > w:
+            new_h = max_image_size
+            new_w = int(w * (new_h / h))
+        else:
+            new_w = max_image_size
+            new_h = int(h * (new_w / w))
+        target_size = (new_w, new_h)
+    elif min_image_size is not None:
+        # Calculate new dimensions to fit within min_image_size
+        if h < w:
+            new_h = min_image_size
+            new_w = int(w * (new_h / h))
+        else:
+            new_w = min_image_size
+            new_h = int(h * (new_w / w))
+        target_size = (new_w, new_h)
+
+    # Apply size constraints if provided
+    if target_size is not None:
+        if max_image_size is not None:
+            target_w, target_h = target_size
+            if target_h > max_image_size:
+                target_h = max_image_size
+                target_w = int(w * (target_h / h))  # Use original image dimensions
+            if target_w > max_image_size:
+                target_w = max_image_size
+                target_h = int(h * (target_w / w))  # Use original image dimensions
+            target_size = (target_w, target_h)
+
+        if min_image_size is not None:
+            target_w, target_h = target_size
+            if target_h < min_image_size:
+                target_h = min_image_size
+                target_w = int(w * (target_h / h))  # Use original image dimensions
+            if target_w < min_image_size:
+                target_w = min_image_size
+                target_h = int(h * (target_w / w))  # Use original image dimensions
+            target_size = (target_w, target_h)
 
     interpolation_modes = {
         "bicubic": cv2.INTER_CUBIC,
@@ -539,7 +597,7 @@ def resize(image, size=None, scale=None, mode='bicubic'):
     if mode not in interpolation_modes:
         raise ValueError(f"Invalid mode '{mode}'. Choose from {list(interpolation_modes.keys())}.")
 
-    return cv2.resize(image, size, interpolation=interpolation_modes[mode])
+    return cv2.resize(image, target_size, interpolation=interpolation_modes[mode])
 
 def resize_mask(image, size=None, scale=None, mode='nearest'):
     """Resize a mask image, ensuring it is in the correct format.
@@ -1038,6 +1096,10 @@ def convert(image, code='gray2bgr'):
         code = cv2.COLOR_BGR2RGB
     elif code == 'rgb2bgr':
         code = cv2.COLOR_RGB2BGR
+    elif code == 'lch2bgr':
+        pass
+    elif code == 'lab2bgr':
+        code = cv2.COLOR_Lab2BGR
     return cv2.cvtColor(image, code)
 
 def cv2pil(image: np.ndarray) -> Image:

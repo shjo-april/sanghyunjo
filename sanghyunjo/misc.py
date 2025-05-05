@@ -127,6 +127,8 @@ class Parser:
             self._add_from_inputs(input_dict)
         self.args = self.parser.parse_args()
 
+        # TODO: automatically convert a string to dictionary
+    
     def _add(self, tag, default):
         if isinstance(default, bool):
             option = {"action": "store_false"} if default else {"action": "store_true"}

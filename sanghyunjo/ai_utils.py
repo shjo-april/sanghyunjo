@@ -253,7 +253,15 @@ def normalize(masks: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
     Returns:
         torch.Tensor: Normalized tensor with values in the range [eps, 1 - eps].
     """
+    is_2D = len(masks.shape) == 2
+    if is_2D:
+        masks = masks[None]  # Add a batch dimension if input is 2D
+
     min_v, max_v = masks.view(masks.shape[0], -1).aminmax(dim=1)
-    min_v, max_v = min_v[:, None, None], max_v[:, None, None]
-    masks = (masks - min_v) / (max_v - min_v)
-    return masks.clamp(min=eps, max=1. - eps)
+    masks = (masks - min_v[:, None, None]) / (max_v[:, None, None] - min_v[:, None, None])
+    masks = masks.clamp(min=eps, max=1 - eps)
+
+    if is_2D:
+        masks = masks[0]  # Remove the batch dimension if input was 2D
+
+    return masks
