@@ -509,7 +509,6 @@ def denorm(image: np.ndarray) -> np.ndarray:
     """
     return (image * 255).astype(np.uint8)
 
-
 def resize(image: np.ndarray,
            size: tuple = None,
            scale: float = None,
@@ -613,7 +612,7 @@ def resize_mask(image, size=None, scale=None, mode='nearest'):
     if image.dtype in [np.float32, np.float64]:
         image = denorm(image)
         
-    return resize(image, size, scale, mode)
+    return resize(image, size=size, scale=scale, mode=mode)
 
 def colorize(cam: np.ndarray, option: str = 'SEISMIC') -> np.ndarray:
     """Apply a colormap to a given grayscale or single-channel image.
@@ -718,6 +717,33 @@ def randomize_color(color=None, variation=30):
             min(255, max(0, c + random.randint(-variation, variation)))
             for c in color
         )
+
+def image2clipboard(cv_image: np.ndarray) -> None:
+    """
+    Copies an OpenCV image (np.ndarray) directly to the Windows clipboard as an image.
+
+    The Windows clipboard only supports the DIB (Device Independent Bitmap) format,
+    which is based on BMP. Therefore, the image is converted to BMP format and
+    stripped of its 14-byte file header before being placed on the clipboard.
+
+    Args:
+        cv_image (np.ndarray): An OpenCV image in BGR color format.
+    """
+    import win32clipboard # Requires: pip install pywin32
+    
+    # Convert OpenCV (BGR) image to PIL (RGB) image
+    pil_image: Image.Image = cv2pil(cv_image)
+
+    # Save the image to an in-memory buffer in BMP format
+    with BytesIO() as output:
+        pil_image.save(output, format="BMP")
+        bmp_data = output.getvalue()[14:]  # Strip 14-byte BMP file header (not needed for DIB)
+
+    # Open the clipboard and set the image data
+    win32clipboard.OpenClipboard()
+    win32clipboard.EmptyClipboard()
+    win32clipboard.SetClipboardData(win32clipboard.CF_DIB, bmp_data)
+    win32clipboard.CloseClipboard()
 
 # TODO: optimize/add existing/new functions below
 def draw_text(
