@@ -745,6 +745,82 @@ def image2clipboard(cv_image: np.ndarray) -> None:
     win32clipboard.SetClipboardData(win32clipboard.CF_DIB, bmp_data)
     win32clipboard.CloseClipboard()
 
+def convert(image: np.ndarray, code: str = 'gray2bgr') -> np.ndarray:
+    """
+    Converts an image or embedding between color spaces.
+    Special code 'lch2bgr' handles LCh → BGR via Lab.
+    Special code 'vec2bgr' maps 3D vectors to HSV for perceptual visualization.
+
+    Args:
+        image (np.ndarray): Input image or (H, W, 3) array
+        code (str): Conversion code (OpenCV or special)
+
+    Returns:
+        np.ndarray: Converted image in BGR format (float32 or uint8)
+    """
+    import numpy as np
+    import cv2
+    import matplotlib.colors
+
+    def lch_to_bgr(lch: np.ndarray) -> np.ndarray:
+        lch = lch.astype(np.float32)
+        if lch.max() <= 1.0:
+            lch[..., 0] *= 100
+            lch[..., 1] *= 100
+            lch[..., 2] *= 360
+        h_rad = np.deg2rad(lch[..., 2])
+        a = np.cos(h_rad) * lch[..., 1]
+        b = np.sin(h_rad) * lch[..., 1]
+        lab = np.stack([lch[..., 0], a, b], axis=-1).astype(np.float32)
+        lab[..., 1:] = np.clip(lab[..., 1:], -127, 127)
+        return cv2.cvtColor(lab, cv2.COLOR_Lab2BGR)
+
+    def vec_to_bgr(vec: np.ndarray, saturation=1.) -> np.ndarray:
+        vec = vec.astype(np.float32)
+        flat = vec.reshape(-1, 3)
+
+        # Hue from arctangent of xy vector direction
+        hue = (np.arctan2(flat[:, 1], flat[:, 0]) / (2 * np.pi)) + 0.5
+        hue = np.mod(hue, 1.0)
+
+        # Brightness from vector magnitude
+        value = np.linalg.norm(flat, axis=1)
+        value = (value - value.min()) / (value.max() - value.min() + 1e-8)
+        # value = value ** 0.5
+
+        # Saturation: dynamic or fixed
+        if saturation == 'auto':
+            sat = np.linalg.norm(flat[:, :2], axis=1)  # or use full vec norm
+            sat = (sat - sat.min()) / (sat.max() - sat.min() + 1e-8)
+        else:
+            sat = np.full_like(flat[:, 2], float(saturation))
+
+        print("Hue stats:", hue.shape, hue.min(), hue.max(), hue.mean())
+        print("Value stats:", value.shape, value.min(), value.max(), value.mean())
+        print("Saturation stats:", sat.shape, sat.min(), sat.max(), sat.mean())
+
+        hsv = np.stack([hue, sat, value], axis=1)
+        rgb = matplotlib.colors.hsv_to_rgb(hsv).reshape(vec.shape)
+        bgr = cv2.cvtColor((rgb * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+        return bgr
+
+    cv2_codes = {
+        'gray2bgr': cv2.COLOR_GRAY2BGR,
+        'bgr2gray': cv2.COLOR_BGR2GRAY,
+        'bgr2rgb':  cv2.COLOR_BGR2RGB,
+        'rgb2bgr':  cv2.COLOR_RGB2BGR,
+        'lab2bgr':  cv2.COLOR_Lab2BGR,
+    }
+
+    if code == 'lch2bgr':
+        return lch_to_bgr(image)
+    elif code == 'vec2bgr':
+        return vec_to_bgr(image)
+    elif code in cv2_codes:
+        return cv2.cvtColor(image, cv2_codes[code])
+    else:
+        raise NotImplementedError(f"Unsupported conversion code: '{code}'")
+
 # TODO: optimize/add existing/new functions below
 def draw_text(
         image: np.ndarray, text: str, coordinate: tuple, color: tuple=(0, 0, 0), 
@@ -1112,21 +1188,6 @@ def vstack(*images):
 
 def hstack(*images):
     return np.concatenate([image if len(image.shape) == 3 else convert(image) for image in images], axis=1)
-
-def convert(image, code='gray2bgr'):
-    if code == 'gray2bgr':
-        code = cv2.COLOR_GRAY2BGR
-    elif code == 'bgr2gray':
-        code = cv2.COLOR_BGR2GRAY
-    elif code == 'bgr2rgb':
-        code = cv2.COLOR_BGR2RGB
-    elif code == 'rgb2bgr':
-        code = cv2.COLOR_RGB2BGR
-    elif code == 'lch2bgr':
-        pass
-    elif code == 'lab2bgr':
-        code = cv2.COLOR_Lab2BGR
-    return cv2.cvtColor(image, code)
 
 def cv2pil(image: np.ndarray) -> Image:
     return Image.fromarray(convert(image, 'bgr2rgb'))
