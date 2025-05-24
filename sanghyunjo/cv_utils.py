@@ -544,6 +544,8 @@ def resize(image: np.ndarray,
     target_size = None
 
     if size is not None:
+        if isinstance(size, np.ndarray):
+            size = size.shape[:2][::-1]
         target_size = tuple(size)  # Use provided size directly
     elif scale is not None:
         target_size = (int(w * scale), int(h * scale))  # Calculate size from scale
@@ -821,19 +823,58 @@ def convert(image: np.ndarray, code: str = 'gray2bgr') -> np.ndarray:
     else:
         raise NotImplementedError(f"Unsupported conversion code: '{code}'")
 
-# TODO: optimize/add existing/new functions below
+def get_contrast_color(bgr_mean):
+    """Return black or white based on brightness of BGR average color."""
+    b, g, r = bgr_mean
+    brightness = 0.299 * r + 0.587 * g + 0.114 * b
+    return (255, 255, 255) if brightness < 128 else (0, 0, 0)
+
+def get_complementary_color(bgr_mean):
+    """Return complementary RGB color based on average BGR input."""
+    import colorsys
+    r, g, b = [x / 255.0 for x in bgr_mean[::-1]]  # Convert BGR to normalized RGB
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    h = (h + 0.5) % 1.0  # Rotate hue by 180°
+    comp_r, comp_g, comp_b = colorsys.hsv_to_rgb(h, s, v)
+    return (int(comp_r * 255), int(comp_g * 255), int(comp_b * 255))
+
 def draw_text(
-        image: np.ndarray, text: str, coordinate: tuple, color: tuple=(0, 0, 0), 
-        font_path: str=None, font_size: int=20, 
-        background: tuple=(79, 244, 255), centering: bool=False, padding: int=5
+        image: np.ndarray,
+        text: str,
+        coordinate: tuple = (0, 0),
+        color: tuple = None,
+        font_path: str = None,
+        font_size: int = 20,
+        background: tuple = None,
+        centering: bool = False,
+        padding: int = 5,
+        auto_color_mode: str = 'contrast'  # or 'complement'
     ):
+    """
+    Draw text on an image with optional background and automatic text color (contrast or complementary).
+    
+    Parameters:
+        image (np.ndarray): OpenCV image (BGR)
+        text (str): Text to draw
+        coordinate (tuple): Anchor (x, y)
+        color (tuple or None): RGB color, e.g., (79, 244, 255); if None, color is auto-computed
+        font_path (str or None): Path to font file
+        font_size (int): Font size
+        background (tuple or None): Background color (BGR)
+        centering (bool): Center text around coordinate
+        padding (int): Padding around text box
+        auto_color_mode (str): 'contrast' or 'complement' (used if color is None)
+    
+    Returns:
+        background_box (list or None): [xmin, ymin, xmax, ymax]
+    """
     if font_path is None:
         font_path = os.path.join(os.path.dirname(__file__), 'fonts', 'Times New Roman MT Std.otf')
-    
-    text = ' ' + text
+
+    # text = ' ' + text
     font = ImageFont.truetype(font_path, font_size)
-    
-    # tw, th = font.getsize(text) # for pillow==9.5.0
+
+    # Text size
     left, top, right, bottom = font.getbbox(text)
     tw, th = right - left, bottom - top
 
@@ -842,23 +883,38 @@ def draw_text(
         coordinate[0] = max(coordinate[0] - (tw // 2 + padding // 2), 0)
         coordinate[1] = max(coordinate[1] - (th // 2 + padding // 2), 0)
         coordinate = tuple(coordinate)
-    
+
+    xmin, ymin = coordinate
+    xmax, ymax = xmin + tw + padding, ymin + th + padding
+    h, w = image.shape[:2]
+    xmin_c, xmax_c = max(0, xmin), min(w, xmax)
+    ymin_c, ymax_c = max(0, ymin), min(h, ymax)
+
+    if color is None:
+        roi = image[ymin_c:ymax_c, xmin_c:xmax_c]
+        bgr_mean = roi.mean(axis=(0, 1)) if roi.size > 0 else np.array([0, 0, 0])
+        if auto_color_mode == 'contrast':
+            color = get_contrast_color(bgr_mean)
+        elif auto_color_mode == 'complement':
+            color = get_complementary_color(bgr_mean)
+        else:
+            raise ValueError("auto_color_mode must be 'contrast' or 'complement'")
+
+    # Draw background box if requested
     background_box = None
     if background is not None:
-        cv2.rectangle(image, coordinate, (coordinate[0] + tw + padding, coordinate[1] + th + padding), background, cv2.FILLED)
-        
-        xmin, ymin = coordinate
-        xmax, ymax = (coordinate[0] + tw + padding, coordinate[1] + th + padding)
-        
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), background, cv2.FILLED)
         background_box = [xmin, ymin, xmax, ymax]
-    
+
+    # Draw text with PIL
     pillow_image = Image.fromarray(image)
     draw = ImageDraw.Draw(pillow_image)
-    draw.text(coordinate, text, font=font, fill=(color[0], color[1], color[2], 0))
-
+    draw.text((xmin, ymin), text, font=font, fill=color)
     image[:, :, :] = np.asarray(pillow_image)
+
     return background_box
 
+# TODO: optimize/add existing/new functions below
 def interpolate_colors(c1, c2, n=256):
     c1 = np.asarray(c1, dtype=np.float32) / 255.
     c2 = np.asarray(c2, dtype=np.float32) / 255.

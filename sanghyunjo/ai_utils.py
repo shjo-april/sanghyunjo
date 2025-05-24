@@ -2,11 +2,13 @@
 # author: Sanghyun Jo <shjo.april@gmail.com>
 
 import torch
-import random
+import torch.nn as nn
+import torch.nn.functional as F
 
+import random
 import numpy as np
 
-from torch.nn import functional as F
+from typing import Union
 
 """
 from .misc import get_name
@@ -70,33 +72,28 @@ def set_seed(seed: int, device: torch.device = torch.device('cuda:0')) -> torch.
 
     return torch.Generator(device).manual_seed(seed)
 
-def resize_tensor(tensor: torch.Tensor, size: tuple, mode: str = 'nearest') -> torch.Tensor:
-    """Resize a tensor to the specified size using interpolation.
+def resize(tensor: torch.Tensor, size: Union[tuple, torch.Tensor], mode: str = 'nearest') -> torch.Tensor:
+    """
+    Resize a tensor to the specified size using interpolation.
 
     Args:
-        tensor (torch.Tensor): Input tensor with shape (C, H, W) or (N, C, H, W).
-        size (tuple): Target size as (height, width).
-        mode (str, optional): Interpolation mode. Defaults to 'nearest'.
+        tensor (torch.Tensor): Input tensor of shape (C, H, W) or (N, C, H, W).
+        size (tuple or torch.Tensor): Target size as (height, width) or a tensor whose shape determines the size.
+        mode (str, optional): Interpolation mode to use ('nearest', 'bilinear', etc.). Defaults to 'nearest'.
 
     Returns:
-        torch.Tensor: Resized tensor with the same number of dimensions as input.
+        torch.Tensor: Resized tensor with the same number of dimensions as the input.
+
+    Notes:
+        - If the input is 3D (C, H, W), a batch dimension is temporarily added for interpolation.
+        - If `size` is a tensor, its spatial dimensions (last two) are used as the target size.
     """
     is_3d = tensor.ndim == 3
     tensor = tensor.unsqueeze(0) if is_3d else tensor
+    if isinstance(size, torch.Tensor):
+        size = size.shape[-2:]
     resized: torch.Tensor = F.interpolate(tensor, size, mode=mode)
     return resized.squeeze(0) if is_3d else resized
-
-def match_size(tensor: torch.Tensor, target: torch.Tensor, mode: str = 'nearest') -> torch.Tensor:
-    """Resize a tensor to match the spatial dimensions of a target tensor.
-
-    Args:
-        tensor (torch.Tensor): Input tensor to be resized.
-        target (torch.Tensor): Target tensor whose spatial dimensions will be matched.
-
-    Returns:
-        torch.Tensor: Resized tensor with the same height and width as the target.
-    """
-    return resize_tensor(tensor, target.shape[-2:], mode)
 
 def count_params(params, unit: float = 1e6) -> float:
     """Count the total number of parameters in a model.
@@ -212,24 +209,23 @@ def cat(inputs, dim=0):
     else:
         raise TypeError("Unsupported input type for cat(). Expected list of NumPy arrays or list of torch.Tensors.")
 
-def minmax(inputs, dim=0):
+def minmax(inputs, dim: Union[int, tuple], keepdim=False):
     """
     Computes the minimum and maximum values along a specified dimension.
 
     Args:
         inputs (Union[np.ndarray, torch.Tensor]):
-            Input array or tensor.
-        dim (int): The dimension along which to compute min and max.
+            Input data, must be a NumPy array or PyTorch tensor.
+        dim (int or tuple of int): The dimension(s) along which to compute the min and max.
 
     Returns:
-        Tuple: (min_values, max_values), both of same type as inputs.
+        Tuple: (min_values, max_values) of the same type as the input.
 
     Raises:
         TypeError: If input is not a NumPy array or PyTorch tensor.
 
     Examples:
         >>> import sanghyunjo.ai_utils as shai
-
         >>> shai.minmax(np.array([[1, 2], [3, 4]]), dim=0)
         (array([1, 2]), array([3, 4]))
 
@@ -237,31 +233,114 @@ def minmax(inputs, dim=0):
         (tensor([1, 3]), tensor([2, 4]))
     """
     if isinstance(inputs, np.ndarray):
-        return np.min(inputs, axis=dim), np.max(inputs, axis=dim)
+        return np.min(inputs, axis=dim, keepdims=keepdim), np.max(inputs, axis=dim, keepdims=keepdim)
     elif isinstance(inputs, torch.Tensor):
-        return tuple(inputs.aminmax(dim=dim))
+        return inputs.amin(dim=dim, keepdim=keepdim), inputs.amax(dim=dim, keepdim=keepdim)
     else:
         raise TypeError("Unsupported input type for minmax(). Expected np.ndarray or torch.Tensor.")
     
-def normalize(masks: torch.Tensor, eps: float = 1e-3) -> torch.Tensor:
-    """Normalize a tensor to the range [eps, 1 - eps].
+def normalize(masks: Union[torch.Tensor, np.ndarray], dim: Union[int, tuple], eps: float = 1e-6) -> Union[torch.Tensor, np.ndarray]:
+    """
+    Normalize a tensor or array to the range [0, 1] (approximately [eps, 1 - eps] if clamped).
 
     Args:
-        masks (torch.Tensor): Input tensor to normalize.
-        eps (float, optional): Small epsilon value to avoid extreme values. Defaults to 1e-3.
+        masks (Union[torch.Tensor, np.ndarray]): Input tensor or array to normalize.
+        dim (int or tuple): Dimension(s) along which to compute min and max.
+        eps (float, optional): Small epsilon to avoid division by zero. Defaults to 1e-6.
 
     Returns:
-        torch.Tensor: Normalized tensor with values in the range [eps, 1 - eps].
+        Union[torch.Tensor, np.ndarray]: Normalized output in the same type as input.
+
+    Notes:
+        - If input is 2D, it's temporarily expanded to 3D for normalization.
+        - Output values are not explicitly clamped, but range is approximately [0, 1].
     """
     is_2D = len(masks.shape) == 2
     if is_2D:
         masks = masks[None]  # Add a batch dimension if input is 2D
 
-    min_v, max_v = masks.view(masks.shape[0], -1).aminmax(dim=1)
-    masks = (masks - min_v[:, None, None]) / (max_v[:, None, None] - min_v[:, None, None])
-    masks = masks.clamp(min=eps, max=1 - eps)
+    min_v, max_v = minmax(masks, dim=dim, keepdim=True)
+    masks = (masks - min_v) / (max_v - min_v + eps)
 
     if is_2D:
         masks = masks[0]  # Remove the batch dimension if input was 2D
 
     return masks
+
+class GaussianSmoothing(nn.Module):
+    """
+    Applies Gaussian smoothing to 1D, 2D, or 3D inputs using depthwise convolution.
+    This module is non-trainable and can be used to smooth segmentation masks,
+    attention maps, etc.
+
+    Args:
+        kernel_size (int or list): Size of the Gaussian kernel per dimension
+        sigma (float or list): Standard deviation of the Gaussian kernel per dimension
+        dim (int): Number of spatial dimensions (1, 2, or 3)
+
+    Example:
+        # Given a 3D attention map of shape [D, H, W], convert to 4D by adding batch dim:
+        cross_attn = smoothing(cross_attn[None])[0]
+        # Adds batch dimension, applies smoothing, then removes batch dimension
+        # Resulting shape remains [D, H, W] after smoothing
+    """
+    def __init__(self, kernel_size=3, sigma=0.5, dim=2):
+        super().__init__()
+        self.dim = dim
+        kernel_size = [kernel_size] * dim if isinstance(kernel_size, int) else kernel_size
+        sigma = [sigma] * dim if isinstance(sigma, float) else sigma
+
+        # Create Gaussian kernel in each dimension using meshgrid
+        meshgrids = torch.meshgrid(
+            [torch.arange(size, dtype=torch.float32) for size in kernel_size],
+            indexing='ij'
+        )
+        kernel = 1
+        for size, std, mgrid in zip(kernel_size, sigma, meshgrids):
+            mean = (size - 1) / 2
+            kernel *= torch.exp(-((mgrid - mean) ** 2) / (2 * std ** 2))
+
+        kernel /= kernel.sum()  # Normalize the kernel
+        self.kernel = kernel.view(1, 1, *kernel.size()).requires_grad_(False)  # (1,1,H,W)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        """
+        Applies Gaussian smoothing to the input tensor.
+
+        Args:
+            inputs: (B, C, H, W) for 2D, or appropriate shape for 1D/3D
+        Returns:
+            Smoothed tensor of the same shape as input
+        """
+        kernel = self.kernel.to(inputs.device, dtype=inputs.dtype)
+        kernel = kernel.repeat(inputs.size(1), *[1] * (kernel.dim() - 1))  # repeat for each channel
+
+        pad_size = self.kernel.shape[-1] // 2
+        padding = [pad_size] * (2 * self.dim)  # symmetric padding
+
+        inputs = F.pad(inputs, padding, mode='reflect')
+
+        conv = [F.conv1d, F.conv2d, F.conv3d][self.dim - 1]
+        return conv(inputs, weight=kernel, groups=inputs.size(1))  # depthwise conv
+
+class DiceLoss(nn.Module):
+    def __init__(self, smooth=1.0):
+        super().__init__()
+        self.smooth = smooth
+
+    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            inputs: (B, H, W) — predicted probabilities in [0, 1]
+            targets: (B, H, W) — ground truth in {0, 1}
+        Returns:
+            scalar Dice loss
+        """
+        inputs = inputs.view(inputs.size(0), -1)   # (B, H*W)
+        targets = targets.view(targets.size(0), -1).float()  # (B, H*W)
+
+        intersection = (inputs * targets).sum(dim=1)
+        union = inputs.sum(dim=1) + targets.sum(dim=1)
+
+        dice = (2.0 * intersection + self.smooth) / (union + self.smooth)
+        return 1.0 - dice.mean()

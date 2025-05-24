@@ -1,4 +1,4 @@
-# Copyright (C) 2024 * Ltd. All rights reserved.
+# Copyright (C) 2025 * Ltd. All rights reserved.
 # author: Sanghyun Jo <shjo.april@gmail.com>
 
 import os
@@ -58,7 +58,7 @@ def isfile(path): # file or dir
     return os.path.isfile(path) or os.path.isdir(path)
 
 def listdir(dir_path):
-    if '*' in dir_path: return glob.glob(dir_path)
+    if '*' in dir_path: return [f.replace("\\", "/") for f in glob.glob(dir_path)]
     else: return os.listdir(dir_path)
 
 def progress(data, desc=None):
