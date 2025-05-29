@@ -54,6 +54,22 @@ def basename(path, split_ext=False, remove_ext=False, replace_ext='') -> Union[s
     
     return filename
 
+def dirname(path) -> str:
+    """
+    Returns the directory part of the given path,
+    excluding the basename determined by the same options as in `basename`.
+
+    Examples:
+        dirname("/some/dir/file.txt")                             # '/some/dir/'
+        dirname("/some/dir/file.txt", remove_ext=True)            # '/some/dir/'
+        dirname("/some/dir/file.txt", replace_ext=".md")          # '/some/dir/'
+        dirname("/file.txt")                                      # '/'
+        dirname("/some/file.txt", split_ext=True)                 # '/some/'
+    """
+    base = basename(path)
+    dir_part = path[:-len(base)]
+    return dir_part if dir_part else '/'
+
 def isfile(path): # file or dir
     return os.path.isfile(path) or os.path.isdir(path)
 
