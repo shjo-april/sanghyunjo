@@ -13,7 +13,7 @@ import numpy as np
 
 from io import BytesIO
 from dataclasses import dataclass
-from PIL import ImageFont, ImageDraw, Image
+from PIL import ImageFont, ImageDraw, Image, ExifTags
 
 Image.MAX_IMAGE_PIXELS = None # to read unlimited pixels like a large tiff format
 
@@ -129,15 +129,16 @@ class MouseEventHandler:
         elif event == cv2.EVENT_MOUSEWHEEL:
             self.wheelup() if flags > 0 else self.wheeldown()
 
-def imread(path, backend='opencv', color=None):
+def imread(path, backend='opencv', color=None, exif=False):
     """
-    Loads an image using OpenCV or Pillow.
+    Loads an image using OpenCV or Pillow, with optional EXIF-based orientation correction.
 
     Args:
         path (str): Path to the image file.
         backend (str): Backend to use for loading ('opencv', 'pillow', or 'mask').
         color (str | None): Color mode ('gray', 'rgb', or None for unchanged).
-    
+        exif (bool): Whether to apply EXIF-based orientation correction.
+
     Returns:
         np.ndarray or PIL.Image.Image or None: Loaded image, or None if file not found.
     """
@@ -150,25 +151,52 @@ def imread(path, backend='opencv', color=None):
         'pillow': {
             'gray': 'L',
             'rgb': 'RGB',
-            None: None,  # Leave as-is
+            None: None,
         },
         'mask': {
-            None: None,  # Treated as palette image via PIL
+            None: None,
         }
     }
 
+    def apply_exif_orientation(image):
+        try:
+            exif_data = image._getexif()
+            if exif_data is not None:
+                for orientation in ExifTags.TAGS:
+                    if ExifTags.TAGS[orientation] == 'Orientation':
+                        orientation_value = exif_data.get(orientation)
+                        if orientation_value == 3:
+                            image = image.rotate(180, expand=True)
+                        elif orientation_value == 6:
+                            image = image.rotate(270, expand=True)
+                        elif orientation_value == 8:
+                            image = image.rotate(90, expand=True)
+                        break
+        except (AttributeError, KeyError, IndexError):
+            pass
+        return image
+
     try:
-        if backend == 'opencv':
-            # Load image using OpenCV with appropriate color mode
+        if backend == 'opencv' and not exif:
+            # Fast path: load directly with OpenCV
             flag = color_modes['opencv'].get(color, cv2.IMREAD_UNCHANGED)
             return cv2.imdecode(np.fromfile(path, np.uint8), flag)
 
-        elif backend == 'mask':
-            # Load image for mask purposes (e.g., with color palette)
-            return np.asarray(Image.open(path)).copy()
-
-        else:  # 'pillow' backend
+        else:
+            # Use Pillow for EXIF handling or for 'pillow'/'mask' backend
             image = Image.open(path)
+            if exif:
+                image = apply_exif_orientation(image)
+
+            if backend == 'mask':
+                return np.asarray(image).copy()
+
+            if backend == 'opencv':
+                # Convert to OpenCV format (NumPy BGR)
+                image = image.convert('RGB')
+                return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+            # 'pillow' backend
             mode = color_modes['pillow'].get(color)
             return image if mode is None else image.convert(mode)
 
@@ -177,53 +205,57 @@ def imread(path, backend='opencv', color=None):
 
 def imwrite(path, image, palette=None):
     """
-    Saves an image using OpenCV or Pillow. Supports saving with a custom color palette 
-    for indexed color images (e.g., masks).
+    Save image to a Unicode path, supporting both OpenCV and PIL formats.
+    If a palette is provided, image will be saved as a paletted PIL image.
 
     Args:
-        path (str): File path to save the image.
-        image (np.ndarray or PIL.Image.Image): The image to be saved.
-        palette (Union[np.ndarray, str, None]): Optional color palette for paletted images.
-            - If None: save as a standard image using OpenCV.
-            - If 'voc': use predefined VOC color palette (requires get_colors()).
-            - If 'gray' or 'g': use 2-class grayscale palette.
-            - If np.ndarray: must be shape (768,) or (256, 3), dtype=uint8.
+        path (str): Destination file path (Unicode supported).
+        image (np.ndarray or PIL.Image.Image): Image to save.
+        palette (str | np.ndarray | list | None): Optional palette or keyword ('voc', 'gray').
 
     Returns:
-        bool: True if the image is successfully saved, False otherwise.
-
-    Examples:
-        >>> imwrite("output.png", img_array)
-        >>> imwrite("mask.png", mask_array, palette='voc')
+        bool: True if saved successfully, False otherwise.
     """
     try:
-        if palette is None:
-            return cv2.imwrite(path, image)
-
-        # Resolve predefined palette string
+        # Resolve predefined palette keywords
         if isinstance(palette, str):
             if palette.lower() == 'voc':
-                palette = get_colors()  # Must return shape (256, 3), dtype=uint8
+                palette = get_colors()  # shape (256, 3), dtype=uint8
             elif palette.lower() in ['gray', 'g']:
                 palette = np.array([[0]*3, [255]*3], dtype=np.uint8)
             else:
                 raise ValueError(f"Unsupported palette keyword: {palette}")
 
-        # Validate palette as ndarray
-        if not isinstance(palette, np.ndarray):
-            raise TypeError("Palette must be a NumPy array, string keyword, or None.")
-        
-        if palette.dtype != np.uint8:
-            raise TypeError("Palette must have dtype np.uint8.")
+        # Handle np.ndarray input
+        if isinstance(image, np.ndarray):
+            if palette is not None:
+                # Convert ndarray to PIL image, apply palette, then save
+                pil_image = Image.fromarray(image)
+                if pil_image.mode != 'P':
+                    pil_image = pil_image.convert('P')
+                if isinstance(palette, np.ndarray):
+                    palette = palette.flatten().tolist()
+                pil_image.putpalette(palette)
+                pil_image.save(path)
+                return True
+            else:
+                # Save as raw image using OpenCV
+                ext = os.path.splitext(path)[1]
+                result, encoded_img = cv2.imencode(ext, image)
+                if result:
+                    encoded_img.tofile(path)
+                return result
 
-        # Convert and save as paletted PNG
-        img = Image.fromarray(image.astype(np.uint8)).convert('P')
-        img.putpalette(palette)
-        img.save(path)
-        return True
+        # Handle PIL.Image input
+        elif isinstance(image, Image.Image):
+            image.save(path)
+            return True
+
+        else:
+            raise TypeError("Unsupported image type")
 
     except Exception as e:
-        print(f"[imwrite error] {e}")  # Optional: log or silence
+        print(f"Failed to save image: {e}")
         return False
 
 def imshow(winname, image, wait=-1, title=''):
