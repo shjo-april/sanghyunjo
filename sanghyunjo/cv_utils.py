@@ -198,7 +198,12 @@ def imread(path, backend='opencv', color=None, exif=False):
 
             # 'pillow' backend
             mode = color_modes['pillow'].get(color)
-            return image if mode is None else image.convert(mode)
+            image = image if mode is None else image.convert(mode)
+
+            if backend == 'opencv':
+                image = pil2cv(image)
+
+            return image
 
     except FileNotFoundError:
         return None
@@ -215,6 +220,15 @@ def imwrite(path, image, palette=None):
 
     Returns:
         bool: True if saved successfully, False otherwise.
+
+    TODO: Support unicode paths in OpenCV imwrite (currently requires Unicode support in OpenCV).
+    ---------------------------------------------------------------------------------------------
+    def imwrite_unicode(path, image):
+        ext = '.' + path.split('.')[-1]
+        result, encoded_img = cv2.imencode(ext, image)
+        if result:
+            encoded_img.tofile(path)
+        return result
     """
     try:
         # Resolve predefined palette keywords
