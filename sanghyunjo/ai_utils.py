@@ -267,6 +267,70 @@ def normalize(masks: Union[torch.Tensor, np.ndarray], dim: Union[int, tuple], ep
 
     return masks
 
+def visualize_pca(embs: torch.Tensor, patch_size: int, seed: int = 42) -> np.ndarray:
+    """
+    Projects embedding (D, H, W) using PCA and returns a stable RGB visualization.
+    Applies component sorting, sign alignment, and canonical direction normalization.
+
+    Args:
+        embs (torch.Tensor): (D, H, W) input tensor
+        patch_size (int): Upscale factor to original resolution
+        seed (int): Random seed for PCA stability
+
+    Returns:
+        np.ndarray: BGR image
+    """
+    import numpy as np
+    from .cv_utils import denorm, resize_mask
+    from sklearn.decomposition import PCA
+
+    D, H, W = embs.shape
+    np_embs = embs.reshape(D, H * W).T.cpu().detach().numpy()  # (H*W, D)
+
+    # Step 1: PCA
+    reducer = PCA(n_components=3, random_state=seed)
+    z = reducer.fit_transform(np_embs)  # (N, 3)
+
+    # Step 2: Fix component order by descending explained variance.
+    # order = np.argsort(-reducer.explained_variance_)
+    # z = z[:, order]
+
+    # Step 3: Flip component signs so each axis has a positive global mean
+    z *= np.where(z.mean(axis=0) >= 0, 1.0, -1.0)
+
+    # Step 4: Canonical alignment - align mean direction to x-axis
+    def canonical_align(z):
+        z = z.astype(np.float32)
+        z /= np.linalg.norm(z, axis=1, keepdims=True) + 1e-8
+        mean_dir = z.mean(axis=0)
+        mean_dir /= np.linalg.norm(mean_dir) + 1e-8
+        target = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        axis = np.cross(mean_dir, target)
+        angle = np.arccos(np.clip(np.dot(mean_dir, target), -1.0, 1.0))
+        if np.linalg.norm(axis) < 1e-6 or angle < 1e-4:
+            return z
+        axis /= np.linalg.norm(axis)
+        K = np.array([
+            [0, -axis[2], axis[1]],
+            [axis[2], 0, -axis[0]],
+            [-axis[1], axis[0], 0]
+        ], dtype=np.float32)
+        R = np.eye(3, dtype=np.float32) + np.sin(angle) * K + (1 - np.cos(angle)) * (K @ K)
+        return z @ R.T
+
+    z = canonical_align(z)
+
+    # Step 5: Normalize per-channel to [0, 1]
+    z_min, z_max = z.min(axis=0), z.max(axis=0)
+    z = (z - z_min) / (z_max - z_min + 1e-8)
+    z = z.reshape(H, W, 3)
+
+    # z = convert(z, 'lch2bgr')
+    z = denorm(z)
+
+    # Step 6: Resize and return (RGB to BGR if using OpenCV-compatible tools)
+    return resize_mask(z, scale=patch_size)
+
 class GaussianSmoothing(nn.Module):
     """
     Applies Gaussian smoothing to 1D, 2D, or 3D inputs using depthwise convolution.
