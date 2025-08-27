@@ -640,6 +640,7 @@ def resize(image: np.ndarray,
         "bicubic": cv2.INTER_CUBIC,
         "nearest": cv2.INTER_NEAREST,
         "bilinear": cv2.INTER_LINEAR,
+        'lanczos': cv2.INTER_LANCZOS4,
     }
     if mode not in interpolation_modes:
         raise ValueError(f"Invalid mode '{mode}'. Choose from {list(interpolation_modes.keys())}.")
